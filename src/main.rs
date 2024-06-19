@@ -2,34 +2,40 @@ mod storage;
 use teloxide::prelude::*;
 
 pub mod schema;
-mod order;
+mod service;
+mod model;
+mod strategies;
+use tonic::{transport::Server, Request, Response, Status};
+use broker::broker_service_client::BrokerServiceClient;
+use anyhow::Result;
+use tonic::codegen::tokio_stream;
+use tokio_stream::StreamExt;
+pub mod broker {
+    tonic::include_proto!("broker");
+}
+
+
+use service::strategy_manager::StrategyManager;
 
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()>{
     pretty_env_logger::formatted_builder()
         .filter_level(log::LevelFilter::Info)
         .init();
 
+    let mut client = BrokerServiceClient::connect("http://[::1]:50051").await.unwrap();
+    let response = client.watch_order_transaction(Request::new(())).await?;
+
+    let mut stream = response.into_inner();
+
+    while let Some(message) = stream.next().await {
+        println!("RESPONSE={:?}", message);
+    }
 
 
     log::info!("Starting...");
-
-    let bot = Bot::new("5714835117:AAEuzNfq54AdZRYC1-GiuzJOkEAeYqFwFsA".to_string());
-    teloxide::repl(bot, |bot: Bot, msg: Message| async move {
-        // bot.send_dice(msg.chat.id).await?;
-        // log::info!("{:?}",msg.text());
-        println!("{:?}",msg.text());
-        match msg.text() {
-            Some(txt) => {
-                if txt == "/start" {
-                    bot.send_message(msg.chat.id, "Hello!").await?;
-                }
-            },
-            None => {}
-        }
-        Ok(())
-    }).await;
+    Ok(())
 }
 
 #[cfg(test)]

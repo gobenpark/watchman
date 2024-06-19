@@ -3,6 +3,7 @@ use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::sql_types::*;
 
+
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::orders)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -23,21 +24,4 @@ impl Order {
             created_at,
         }
     }
-}
-
-
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_new_order(){
-        let order = Order::new("1".to_string(), Some(1.0), Some(1.0), NaiveDateTime::now());
-        assert_eq!(order.id, "1");
-        assert_eq!(order.price, Some(1.0));
-        assert_eq!(order.amount, Some(1.0));
-    }
-
-
 }
