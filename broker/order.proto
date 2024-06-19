@@ -1,0 +1,48 @@
+syntax = "proto3";
+option go_package = "jarvis/scraper/proto/gen/go/broker";
+package broker;
+
+import "google/protobuf/timestamp.proto";
+
+message Order {
+  enum Side {
+    SIDE_UNSPECIFIED = 0;
+    SIDE_BUY = 1;
+    SIDE_SELL = 2;
+    SIDE_CANCEL = 3;
+    SIDE_EDIT = 4;
+  }
+
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_CREATED = 1;
+    STATUS_SUBMITTED = 2;
+    STATUS_ACCEPTED = 3;
+    STATUS_PARTIAL = 4;
+    STATUS_COMPLETED = 5;
+    STATUS_CANCELLED = 6;
+    STATUS_EXPIRED = 7;
+    STATUS_MARGIN = 8;
+    STATUS_REJECTED = 9;
+  }
+
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_MARKET = 1;
+    TYPE_LIMIT = 2;
+    TYPE_STOP = 3;
+    TYPE_STOP_LIMIT = 4;
+    TYPE_TRAILING_STOP = 5;
+    TYPE_TRAILING_STOP_LIMIT = 6;
+  }
+
+  string id = 1;
+  string ticker = 2;
+  double price = 3;
+  Side side = 4;
+  Status status = 5;
+  Type type = 6;
+  int32 quantity = 7;
+  string strategy = 8;
+  google.protobuf.Timestamp created = 9;
+}
