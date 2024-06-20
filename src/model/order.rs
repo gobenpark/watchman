@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize, Serializer};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::sql_types::*;
-
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::orders)]
@@ -23,5 +22,23 @@ impl Order {
             amount,
             created_at,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_new_order() {
+        let order = Order::new(
+            "1".to_string(),
+            Some(1.0),
+            Some(1.0),
+            Utc::now().naive_utc(),
+        );
+        assert_eq!(order.id, "1");
+        assert_eq!(order.price, Some(1.0));
+        assert_eq!(order.amount, Some(1.0));
     }
 }

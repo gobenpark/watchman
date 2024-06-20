@@ -1,5 +1,5 @@
-pub mod postgres;
 mod models;
+pub mod postgres;
 
 #[cfg(test)]
 mod test {

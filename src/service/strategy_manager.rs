@@ -15,9 +15,13 @@ impl StrategyManager {
         self.strategies.push(strategy);
     }
 
-    pub async fn run(&mut self) {
-        for strategy in self.strategies.iter_mut() {
-            // strategy.
+    pub fn get_all_targets(&self) -> Vec<String> {
+        // get all targets from strategies
+        let mut strategies = vec![];
+        for strategy in &self.strategies {
+            strategies.extend(strategy.get_targets());
         }
+        strategies
     }
+
 }
