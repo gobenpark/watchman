@@ -1,6 +1,5 @@
 use diesel::data_types::PgTimestamp;
 use diesel::prelude::*;
-use diesel::sql_types::*;
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::orders)]

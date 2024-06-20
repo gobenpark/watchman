@@ -1,5 +1,5 @@
 -- Your SQL goes here
-create table public.article
+create table public.articles
 (
     id         varchar(200) not null
         constraint article_pk
@@ -17,6 +17,3 @@ alter table public.article
 
 create index article_embedding_idx
     on public.article using hnsw (embedding public.vector_l2_ops);
-
-
-

@@ -3,8 +3,9 @@ use teloxide::prelude::*;
 
 pub mod schema;
 mod service;
-mod model;
 mod strategies;
+mod model;
+
 use tonic::{transport::Server, Request, Response, Status};
 use broker::broker_service_client::BrokerServiceClient;
 use anyhow::Result;
@@ -32,6 +33,8 @@ async fn main() -> Result<()>{
     while let Some(message) = stream.next().await {
         println!("RESPONSE={:?}", message);
     }
+
+
 
 
     log::info!("Starting...");
