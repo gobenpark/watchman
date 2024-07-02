@@ -1,13 +1,13 @@
 use crate::strategies::strategy_base::Strategy;
 
 pub struct StrategyManager {
-    strategies: Vec<Box<dyn Strategy>>
+    strategies: Vec<Box<dyn Strategy>>,
 }
 
 impl StrategyManager {
     pub fn new() -> Self {
         Self {
-            strategies: Vec::new()
+            strategies: Vec::new(),
         }
     }
 
@@ -23,5 +23,4 @@ impl StrategyManager {
         }
         strategies
     }
-
 }

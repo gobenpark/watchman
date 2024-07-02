@@ -1,31 +1,32 @@
 mod storage;
 use teloxide::prelude::*;
 
+mod api;
+mod model;
 pub mod schema;
 mod service;
 mod strategies;
-mod model;
 
-use tonic::{transport::Server, Request, Response, Status};
-use broker::broker_service_client::BrokerServiceClient;
 use anyhow::Result;
-use tonic::codegen::tokio_stream;
+use broker::broker_service_client::BrokerServiceClient;
 use tokio_stream::StreamExt;
+use tonic::codegen::tokio_stream;
+use tonic::{transport::Server, Request, Response, Status};
 pub mod broker {
     tonic::include_proto!("broker");
 }
 
-
 use service::strategy_manager::StrategyManager;
 
-
 #[tokio::main]
-async fn main() -> Result<()>{
+async fn main() -> Result<()> {
     pretty_env_logger::formatted_builder()
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let mut client = BrokerServiceClient::connect("http://[::1]:50051").await.unwrap();
+    let mut client = BrokerServiceClient::connect("http://[::1]:50051")
+        .await
+        .unwrap();
     let response = client.watch_order_transaction(Request::new(())).await?;
 
     let mut stream = response.into_inner();
@@ -33,9 +34,6 @@ async fn main() -> Result<()>{
     while let Some(message) = stream.next().await {
         println!("RESPONSE={:?}", message);
     }
-
-
-
 
     log::info!("Starting...");
     Ok(())
