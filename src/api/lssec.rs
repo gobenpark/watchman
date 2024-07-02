@@ -3,9 +3,32 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-enum Order {
+enum OrderAction {
     Buy,
     Sell,
+}
+
+enum OrderType {
+    Limit,
+    Market,
+}
+
+impl OrderAction {
+    fn as_str(&self) -> &str {
+        match self {
+            OrderAction::Sell => "1",
+            OrderAction::Buy => "2",
+        }
+    }
+}
+
+impl OrderType {
+    fn as_str(&self) -> &str {
+        match self {
+            OrderType::Limit => "00",
+            OrderType::Market => "03",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -119,8 +142,7 @@ impl LsSecClient {
         let mut lmap = reqwest::header::HeaderMap::new();
         lmap.insert(
             "Authorization",
-            // format!("Bearer {}", token.to_string()).parse().unwrap(),
-            format!("Bearer {}", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0b2tlbiIsImF1ZCI6IjM0YTAxZWEyLTI1MGItNDhjMi04YjY4LWE2MzVhNzYzMTk0MCIsIm5iZiI6MTcxOTg4MDI5MSwiZ3JhbnRfdHlwZSI6IkNsaWVudCIsImlzcyI6InVub2d3IiwiZXhwIjoxNzE5OTU3NTk5LCJpYXQiOjE3MTk4ODAyOTEsImp0aSI6IlBTNDVoSUZ3MVh1N2FwemlMUWRVYzRqTkxheklQYWNRZHFjWCJ9.BQppSJpH7UF04J7WD7Ab82nSXdpnJhxVa15Ssh6OqzzmNIEdANFkCdMOSYQnOVfSY_TYsinYChKfQS4oDWn14A").parse().unwrap(),
+            format!("Bearer {}", token.to_string()).parse().unwrap(),
         );
         lmap.insert("tr_cd", "t0424".parse().unwrap());
         lmap.insert("tr_cont", "N".parse().unwrap());
@@ -138,32 +160,91 @@ impl LsSecClient {
             }))
             .send()
             .await
-            .unwrap()
+            .expect("Failed to send request")
             .json::<serde_json::Value>()
             .await
-            .unwrap();
-        // println!("{:?}", result);
-        // result.get("t0424OutBlock1").expect("not exist block1").as_array().unwrap().iter().for_each(|x| {
-        //     let position = serde_json::from_value::<Position>(x.clone()).unwrap();
-        //     println!("{:?}", position);
-        // });
-
-        // result.get("t0520OutBlock1").expect("not exist block1").as_array().expect("does not array value").iter().map(|x| {
-        //     match serde_json::from_value::<Position>(x.clone()).map_err(|e| e.into()) {
-        //         Ok(p) => p,
-        //     }
-        // }).collect::<Result<Vec<Position>, _>>().unwrap();
-
-        let positions: Vec<Position> = result
+            .expect("Failed to parse json")
             .get("t0424OutBlock1")?
-            // .expect("not exist block1")
             .as_array()?
-            // .expect("does not array value")
             .iter()
             .map(|x| serde_json::from_value(x.clone()).expect("Failed to deserialize"))
             .collect();
 
-        Some(positions)
+        Some(result)
+    }
+
+    async fn order(
+        &self,
+        ticker: String,
+        amount: i64,
+        price: i64,
+        order_action: OrderAction,
+        order_type: OrderType,
+    ) -> Result<i64, anyhow::Error> {
+        let token = self.get_access_token().await.unwrap();
+        let mut lmap = reqwest::header::HeaderMap::new();
+        lmap.insert(
+            "Authorization",
+            format!("Bearer {}", token.to_string()).parse().unwrap(),
+        );
+        lmap.insert("tr_cd", "CSPAT00601".parse().unwrap());
+        lmap.insert("tr_cont", "N".parse().unwrap());
+        if let Some(result) = Client::new()
+            .post("https://openapi.ls-sec.co.kr:8080/stock/order")
+            .headers(lmap)
+            .json(&serde_json::json!({
+              "CSPAT00601InBlock1": {
+                "IsuNo": format!("A{}",ticker),
+                "OrdQty": amount,
+                "OrdPrc": price,
+                "BnsTpCode": format!("{}",order_action.as_str()),
+                "OrdprcPtnCode": format!("{}",order_type.as_str()),
+                "MgntrnCode": "000",
+                "LoanDt": "",
+                "OrdCndiTpCode": "0"
+              }
+            }))
+            .send()
+            .await
+            .expect("Failed to send request")
+            .json::<serde_json::Value>()
+            .await
+            .expect("Failed to parse json")
+            .get("CSPAT00601OutBlock1")
+            .and_then(|x| x.get("OrdNo"))
+        {
+            return Ok(result.as_i64().unwrap());
+        } else {
+            Err(anyhow::anyhow!("Failed to order"))
+        }
+    }
+
+    async fn order_cancel(&self, order_number: i64, ticker: String) -> Result<(), anyhow::Error> {
+        let token = self.get_access_token().await.unwrap();
+        let mut lmap = reqwest::header::HeaderMap::new();
+        lmap.insert(
+            "Authorization",
+            format!("Bearer {}", token.to_string()).parse().unwrap(),
+        );
+        lmap.insert("tr_cd", "CSPAT00601".parse().unwrap());
+        lmap.insert("tr_cont", "N".parse().unwrap());
+        let result = Client::new()
+            .post("https://openapi.ls-sec.co.kr:8080/stock/order")
+            .headers(lmap)
+            .json(&serde_json::json!({
+              "%sInBlock1": {
+                "OrgOrdNo": order_number,
+                "IsuNo": "%s",
+                "OrdQty": %d
+              }
+            }))
+            .send()
+            .await
+            .expect("Failed to send request")
+            .json::<serde_json::Value>()
+            .await
+            .unwrap();
+        Ok(())
     }
 
     async fn cache_test(&self) {
@@ -198,7 +279,24 @@ mod test {
     #[tokio::test]
     async fn test_get_positions() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        client.get_positions().await;
+        let positions = client.get_positions().await;
+        for i in positions.unwrap() {
+            println!("{:?}", i)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_order() {
+        let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
+        client
+            .order(
+                "232140".to_string(),
+                1,
+                15900,
+                OrderAction::Buy,
+                OrderType::Limit,
+            )
+            .await;
     }
 
     #[tokio::test]
