@@ -1,1 +1,1 @@
-mod lssec;
+pub mod lssec;
