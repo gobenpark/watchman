@@ -22,6 +22,8 @@ prost-types = "0.12.6"
 tokio-stream = "0.1.15"
 url = "2.5.2"
 moka = { version = "0.12.7", features = ["future"] }
+tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
+futures-util = "0.3.30"
 
 
 [build-dependencies]

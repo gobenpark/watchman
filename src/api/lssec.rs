@@ -1,7 +1,17 @@
 use moka::future::Cache;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Once};
+use std::sync::atomic::AtomicBool;
+use std::thread::sleep;
+use std::time;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_tungstenite::{connect_async, connect_async_with_config, tungstenite::protocol::Message};
+use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use tokio_tungstenite::tungstenite::handshake::client::generate_key;
+use tokio_tungstenite::tungstenite::http;
+
+static INIT: Once = Once::new();
 
 enum OrderAction {
     Buy,
@@ -57,6 +67,7 @@ pub struct LsSecClient {
     token: Arc<String>,
     api: Client,
     cache: Cache<String, String>,
+    connect_socket: AtomicBool,
 }
 
 impl LsSecClient {
@@ -68,7 +79,39 @@ impl LsSecClient {
             token: Default::default(),
             api: client,
             cache: Cache::new(10_000),
+            connect_socket: AtomicBool::new(false),
         }
+    }
+
+    pub async fn get_tick_data(&self)  {
+        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await.expect("Failed to connect");
+        let (mut write, read) = ws_stream.split();
+
+        if !self.connect_socket.load(std::sync::atomic::Ordering::Relaxed) {
+            println!("run")
+            tokio::spawn(async move {
+                read.for_each(|message| async {
+                    let data = message.unwrap().into_data();
+                    tokio::io::stdout().write_all(&data).await.unwrap();
+                }).await
+            });
+            self.connect_socket.store(true, std::sync::atomic::Ordering::Relaxed)
+        }
+        let data = &serde_json::json!({
+            "header": {
+                "token": self.get_access_token().await.unwrap(),
+                "tr_type": "3"
+            },
+            "body": {
+                "tr_cd": "K3_",
+                "tr_key": "086520"
+            }
+        });
+
+
+        sleep(time::Duration::from_secs(3));
+        write.send(Message::Text(data.to_string())).await.unwrap();
+
     }
 
     async fn get_access_token(&self) -> Result<String, anyhow::Error> {
@@ -219,7 +262,7 @@ impl LsSecClient {
         }
     }
 
-    async fn order_cancel(&self, order_number: i64, ticker: String) -> Result<(), anyhow::Error> {
+    async fn order_cancel(&self, order_number: i64, ticker: String, amount: i64) -> Result<(), anyhow::Error> {
         let token = self.get_access_token().await.unwrap();
         let mut lmap = reqwest::header::HeaderMap::new();
         lmap.insert(
@@ -234,8 +277,8 @@ impl LsSecClient {
             .json(&serde_json::json!({
               "%sInBlock1": {
                 "OrgOrdNo": order_number,
-                "IsuNo": "%s",
-                "OrdQty": %d
+                "IsuNo": format!("A{}",ticker),
+                "OrdQty": amount,
               }
             }))
             .send()
@@ -261,6 +304,8 @@ mod test {
     static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
     static SECRET: &str = "nzWMVzES7uvxUKyK68nmXb2cHHhOOg8o";
     static TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0b2tlbiIsImF1ZCI6ImZlY2YzZGFlLWZkMjQtNGMwNy1iZjJlLTdmYjYxYjdjZDgzYiIsIm5iZiI6MTcxOTc5NzQ2NiwiZ3JhbnRfdHlwZSI6IkNsaWVudCIsImlzcyI6InVub2d3IiwiZXhwIjoxNzE5ODcxMTk5LCJpYXQiOjE3MTk3OTc0NjYsImp0aSI6IlBTNDVoSUZ3MVh1N2FwemlMUWRVYzRqTkxheklQYWNRZHFjWCJ9.K5j0SV4BLfV573jObRPy3pV03mQQ36FpL7twgYJvJC8Y3hUHImFO0NFk0_dHt1v6YlkPQWBUYP_H5OEFZm522Q";
+
+    use teloxide::types::CountryCode::LS;
     use super::*;
     #[tokio::test]
     async fn test() {
@@ -304,5 +349,11 @@ mod test {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
         let balance = client.get_balance().await;
         println!("{:?}", balance)
+    }
+
+    #[tokio::test]
+    async fn test_once() {
+        let client = LsSecClient::new(KEY.to_string(),SECRET.to_string());
+        client.get_tick_data().await;
     }
 }
