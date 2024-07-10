@@ -3037,6 +3037,7 @@ dependencies = [
  "futures-util",
  "log",
  "moka",
+ "once_cell",
  "pretty_env_logger",
  "prost",
  "prost-types",
