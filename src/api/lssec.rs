@@ -1,6 +1,6 @@
 use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use moka::future::Cache;
-use anyhow::{Result, Context};
+use anyhow::{Result, Context, anyhow};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,8 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::http;
 use tokio_tungstenite::{connect_async, connect_async_with_config, tungstenite::protocol::Message};
-use once_cell::sync::OnceCell;
-// use futures_util::FutureExt;
+use tokio::sync::OnceCell;
 
 static INIT: Once = Once::new();
 
@@ -117,17 +116,14 @@ impl LsSecClient {
     }
 
     pub async fn get_tickers(&self) -> Result<HashMap<String, Market>> {
-
-
-        let tick = self.tickers.get_or_init( {
-            let tickers = self.fetch_tickers().await.unwrap();
-            tickers
-        });
-        Ok(tick.clone())
+        let result = self.tickers.get_or_try_init(||{
+            self.fetch_tickers()
+        }).await;
+        result.cloned()
     }
 
     async fn fetch_tickers(&self) -> Result<HashMap<String, Market>> {
-        let result = self.api_call("t8436", &serde_json::json!({
+        let result = self.api_call("/stock/etc","t8436", &serde_json::json!({
             "t8436InBlock": {
                 "gubun": "0"
             }
@@ -224,7 +220,7 @@ impl LsSecClient {
         Ok(token)
     }
 
-    async fn api_call(&self,tr_cd: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    async fn api_call(&self,path: &str, tr_cd: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
         let token = self.get_access_token().await?;
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("Authorization", format!("Bearer {}", token).parse()?);
@@ -232,7 +228,7 @@ impl LsSecClient {
         headers.insert("tr_cont", "N".parse()?);
 
         self.api
-            .post("https://openapi.ls-sec.co.kr:8080/stock/accno")
+            .post(format!("https://openapi.ls-sec.co.kr:8080{}",path))
             .headers(headers)
             .json(body)
             .send()
@@ -243,7 +239,7 @@ impl LsSecClient {
     }
 
     async fn get_balance(&self) -> Result<i64> {
-        let result = self.api_call("CSPAQ12200", &serde_json::json!({
+        let result = self.api_call("/stock/accno","CSPAQ12200", &serde_json::json!({
             "CSPAQ12200InBlock": {
                 "RecCnt": 1,
                 "MgmtBrnNo": "1",
@@ -259,7 +255,7 @@ impl LsSecClient {
     }
 
     async fn get_positions(&self) -> Result<Vec<Position>> {
-        let result = self.api_call("t0424", &serde_json::json!({
+        let result = self.api_call("/stock/accno","t0424", &serde_json::json!({
         "t0424InBlock": {
             "prcgb": "",
             "chegb": "",
@@ -303,7 +299,7 @@ impl LsSecClient {
             }
         });
 
-        let result = self.api_call("CSPAT00601", &body).await?;
+        let result = self.api_call("/stock/order","CSPAT00601", &body).await?;
 
         result
             .get("CSPAT00601OutBlock1")
@@ -326,7 +322,7 @@ impl LsSecClient {
             }
         });
 
-        self.api_call("CSPAT00800", &body).await?;  // tr_cd를 올바르게 수정해야 합니다.
+        self.api_call("/stock/order","CSPAT00800", &body).await?;  // tr_cd를 올바르게 수정해야 합니다.
 
         Ok(())
     }
@@ -376,15 +372,7 @@ mod test {
     #[tokio::test]
     async fn test_order() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        client
-            .order(
-                "232140".to_string(),
-                1,
-                15900,
-                OrderAction::Buy,
-                OrderType::Limit,
-            )
-            .await;
+
     }
 
     #[tokio::test]
@@ -404,6 +392,7 @@ mod test {
     async fn test_get_tickers() {
         let mut client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
         let map = client.get_tickers().await;
-
+        let map = client.get_tickers().await;
+        let map = client.get_tickers().await;
     }
 }
