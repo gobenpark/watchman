@@ -25,8 +25,11 @@ async fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let client = api::lssec::LsSecClient::new(KEY.to_string(),SECRET.to_string());
-    client.get_tick_data().await;
+    let client = api::lssec::LsSecClient::new(KEY.to_string(), SECRET.to_string());
+
+    while let Some(result) = client.get_tick_data2("005930").await?.recv().await {
+        println!("{}", result)
+    }
     // let manager = StrategyManager::new();
     //
     // let mut client = BrokerServiceClient::connect("http://[::1]:50051")
