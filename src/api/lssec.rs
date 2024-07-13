@@ -11,7 +11,7 @@ use std::sync::{Arc, Once};
 use std::thread::sleep;
 use std::{fmt, time};
 use std::ffi::CString;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use teloxide::dptree::di::DependencySupplier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -82,12 +82,18 @@ impl OrderType {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Tick {
+pub struct Tick {
     price: String,
     #[serde(rename = "cvolume")]
     volume: String,
     #[serde(rename = "shcode")]
     ticker: String
+}
+
+impl Display for Tick {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "ticker: {}, price: {}, volume: {}", self.ticker, self.price, self.volume)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -119,7 +125,7 @@ pub struct LsSecClient {
     connect_socket: AtomicBool,
     tickers: Arc<OnceCell<HashMap<String, Market>>>,
     ws_sender: Arc<Mutex<Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>>,
-    tick_channels: Arc<Mutex<HashMap<String, Sender<Value>>>>,
+    tick_channels: Arc<Mutex<HashMap<String, Sender<Tick>>>>,
 }
 
 
@@ -195,58 +201,33 @@ impl LsSecClient {
             while let Some(message) = read.next().await {
                 if let Ok(message) = message {
                     if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
-                        println!("{:?}", json);
+                        let data: Option<Tick> = json.get("body").and_then(|body| {
+                            serde_json::from_value(body.clone()).ok()
+                        });
 
-                        //
-                        // if let Some(ticker) = json.get("header").and_then(|h| {
-                        //     h.get("tr_key").unwrap().as_str()
-                        // }) {
-                        //     let mut channels = channels.lock().await;
-                        //     if let Some(sender) = channels.get(ticker) {
-                        //         sender.send(json).await;
-                        //     }
-                        // }
+                        match data {
+                            Some(tick) => {
+                                let mut channels = channels.lock().await;
+                                if let Some(sender) = channels.get(&tick.ticker) {
+                                    let _ = sender.send(tick).await;
+                                }
+                            }
+                            None => {
+                                println!("{:?}", json);
+                            }
+                        }
                     }
-
-
-                    // if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
-                    //     let data: Option<Tick> = json.get("body").and_then(|body| {
-                    //         serde_json::from_value(body.clone()).ok()
-                    //     });
-                    //
-                    //     if let Some(tick) = data {
-                    //         let mut channels = channels.lock().await;
-                    //         if let Some(sender) = channels.get(&tick.ticker) {
-                    //
-                    //             let _ = sender.send().await;
-                    //         }
-                    //     }
-                    // }
                 }
-
-                // if let Ok(message) = message {
-                //     if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
-                //         println!("{:?}",json);
-                //         // 메시지에서 종목 코드와 데이터 추출
-                //         if let Some(ticker) = json["body"]["tr_key"].as_str() {
-                //             let mut channels = channels.lock().unwrap();
-                //             if let Some(sender) = channels.get(ticker) {
-                //                 // 해당 종목의 채널로 데이터 전송
-                //                 let _ = sender.send(json).await;
-                //             }
-                //         }
-                //     }
-                // }
             }
         });
         Ok(())
     }
 
-    pub async fn get_tick_data2(&self, ticker: &str) -> Result<(Receiver<Value>)> {
+    pub async fn get_tick_data2(&self, ticker: &str) -> Result<(Receiver<Tick>)> {
         let mut channels = self.tick_channels.lock().await;
 
         if !channels.contains_key(ticker) {
-            let (tx, rx) = channel(100); // 버퍼 크기는 필요에 따라 조정
+            let (tx, rx) = channel::<Tick>(100); // 버퍼 크기는 필요에 따라 조정
             channels.insert(ticker.to_string(), tx);
             let mut sender = self.ws_sender.lock().await;
             if sender.is_none() {
@@ -337,7 +318,7 @@ impl LsSecClient {
             ])
             .send()
             .await?
-            .json::<serde_json::Value>()
+            .json::<Value>()
             .await?;
 
         let token = result
