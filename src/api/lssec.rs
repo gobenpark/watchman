@@ -6,13 +6,13 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Once};
-use std::thread::sleep;
-use std::{fmt, time};
 use std::ffi::CString;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Once};
+use std::thread::sleep;
+use std::{fmt, time};
 use teloxide::dptree::di::DependencySupplier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -87,12 +87,16 @@ pub struct Tick {
     #[serde(rename = "cvolume")]
     volume: String,
     #[serde(rename = "shcode")]
-    ticker: String
+    ticker: String,
 }
 
 impl Display for Tick {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "ticker: {}, price: {}, volume: {}", self.ticker, self.price, self.volume)
+        write!(
+            f,
+            "ticker: {}, price: {}, volume: {}",
+            self.ticker, self.price, self.volume
+        )
     }
 }
 
@@ -128,8 +132,21 @@ pub struct LsSecClient {
     tick_channels: Arc<Mutex<HashMap<String, Sender<Tick>>>>,
 }
 
-
-
+impl Clone for LsSecClient {
+    fn clone(&self) -> Self {
+        LsSecClient {
+            key: self.key.clone(),
+            secret: self.secret.clone(),
+            token: Arc::clone(&self.token),
+            api: self.api.clone(),
+            cache: self.cache.clone(),
+            connect_socket: AtomicBool::new(self.connect_socket.load(Ordering::Relaxed)),
+            tickers: Arc::clone(&self.tickers),
+            ws_sender: Arc::clone(&self.ws_sender),
+            tick_channels: Arc::clone(&self.tick_channels),
+        }
+    }
+}
 
 impl LsSecClient {
     pub fn new(key: String, secret: String) -> Self {
@@ -196,21 +213,54 @@ impl LsSecClient {
         let (write, mut read) = ws_stream.split();
         *self.ws_sender.lock().await = Some(write);
 
+        let tickermap = self.get_tickers().await?.clone();
+        let token = self.get_access_token().await?.clone();
+        let ws_sender = self.ws_sender.clone();
         let channels = self.tick_channels.clone();
+
         tokio::spawn(async move {
             while let Some(message) = read.next().await {
                 if let Ok(message) = message {
                     if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
-                        let data: Option<Tick> = json.get("body").and_then(|body| {
-                            serde_json::from_value(body.clone()).ok()
-                        });
+                        let data: Option<Tick> = json
+                            .get("body")
+                            .and_then(|body| serde_json::from_value(body.clone()).ok());
 
                         match data {
                             Some(tick) => {
                                 let mut channels = channels.lock().await;
-                                if let Some(sender) = channels.get(&tick.ticker) {
-                                    let _ = sender.send(tick).await;
+                                let ticker = tick.ticker.clone();
+                                if let Some(sender) = channels.get(&ticker) {
+                                    // check error channel close then remove from channels
+                                    if let Err(_) = sender.send(tick).await {
+                                        let tickers = tickermap
+                                            .get(&ticker)
+                                            .expect("error get ticker from map");
+
+                                        let data = serde_json::json!({
+                                            "header": {
+                                                "token": token,
+                                                "tr_type": "4"
+                                            },
+                                            "body": {
+                                                "tr_cd": || -> &'static str {
+                                            match tickers {
+                                                Market::KOSPI => "S3_",
+                                                Market::KOSDAQ => "K3_",
+                                            }
+                                        }(),
+                                                "tr_key": ticker
+                                            }
+                                        });
+                                        let mut writer = ws_sender.lock().await;
+                                        if let Some(writer) = writer.as_mut() {
+                                            let _ = writer.send(Message::text(data.to_string()));
+                                            channels.remove(&ticker);
+                                        }
+                                        drop(writer);
+                                    }
                                 }
+                                drop(channels);
                             }
                             None => {
                                 println!("{:?}", json);
@@ -223,9 +273,8 @@ impl LsSecClient {
         Ok(())
     }
 
-    pub async fn get_tick_data2(&self, ticker: &str) -> Result<(Receiver<Tick>)> {
+    pub async fn get_tick_data(&self, ticker: &str) -> Result<(Receiver<Tick>)> {
         let mut channels = self.tick_channels.lock().await;
-
         if !channels.contains_key(ticker) {
             let (tx, rx) = channel::<Tick>(100); // 버퍼 크기는 필요에 따라 조정
             channels.insert(ticker.to_string(), tx);
@@ -233,13 +282,13 @@ impl LsSecClient {
             if sender.is_none() {
                 drop(sender);
                 self.connect_websocket().await?;
+            } else {
+                drop(sender);
             }
 
             let tickermap = self.get_tickers().await?;
 
-            let tickers = tickermap
-                .get(ticker)
-                .context("invalid ticker")?;
+            let tickers = tickermap.get(ticker).context("invalid ticker")?;
 
             let data = serde_json::json!({
                 "header": {
@@ -265,41 +314,6 @@ impl LsSecClient {
         } else {
             return Err(anyhow::anyhow!("Already subscribed"));
         }
-    }
-
-    pub async fn get_tick_data(&self) {
-        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket")
-            .await
-            .expect("Failed to connect");
-        let (mut write, read) = ws_stream.split();
-
-        if !self
-            .connect_socket
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            tokio::spawn(async move {
-                read.for_each(|message| async {
-                    let data = message.unwrap().into_data();
-                    tokio::io::stdout().write_all(&data).await.unwrap();
-                })
-                .await
-            });
-            self.connect_socket
-                .store(true, std::sync::atomic::Ordering::Relaxed)
-        }
-        let data = &serde_json::json!({
-            "header": {
-                "token": self.get_access_token().await.unwrap(),
-                "tr_type": "3"
-            },
-            "body": {
-                "tr_cd": "K3_",
-                "tr_key": "086520"
-            }
-        });
-
-        sleep(time::Duration::from_secs(3));
-        write.send(Message::Text(data.to_string())).await.unwrap();
     }
 
     async fn get_access_token(&self) -> Result<String> {
