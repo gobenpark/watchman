@@ -6,9 +6,9 @@ mod model;
 pub mod schema;
 mod service;
 mod strategies;
-
 use anyhow::Result;
 use broker::broker_service_client::BrokerServiceClient;
+use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tonic::codegen::tokio_stream;
 use tonic::{transport::Server, Request, Response, Status};
@@ -27,21 +27,22 @@ async fn main() -> Result<()> {
 
     let client = api::lssec::LsSecClient::new(KEY.to_string(), SECRET.to_string());
 
-    while let Some(result) = client.get_tick_data2("005930").await?.recv().await {
-        println!("{}", result)
-    }
-    // let manager = StrategyManager::new();
-    //
-    // let mut client = BrokerServiceClient::connect("http://[::1]:50051")
-    //     .await
-    //     .unwrap();
-    // let response = client.watch_order_transaction(Request::new(())).await?;
-    //
-    // let mut stream = response.into_inner();
-    //
-    // while let Some(message) = stream.next().await {
-    //     println!("RESPONSE={:?}", message);
-    // }
+    let mut sam = client.get_tick_data("005930").await?;
+
+    let task1: JoinHandle<()> = tokio::spawn(async move {
+        while let Some(result) = sam.recv().await {
+            println!("005930: {}", result)
+        }
+    });
+
+    let mut elec = client.get_tick_data("103590").await?;
+    let task2: JoinHandle<()> = tokio::spawn(async move {
+        while let Some(result) = elec.recv().await {
+            println!("103590: {}", result)
+        }
+    });
+
+    tokio::try_join!(task1, task2)?;
 
     log::info!("Starting...");
     Ok(())
