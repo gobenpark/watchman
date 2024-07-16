@@ -1,5 +1,4 @@
-use crate::api;
-use crate::service::position_manager::PositionManager;
+use crate::broker;
 use crate::strategies::strategy_base::Strategy;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -17,16 +16,14 @@ pub trait OrderExecutor: Send + Sync {
 
 pub struct TradingManager {
     strategies: Vec<Arc<Mutex<Box<dyn Strategy>>>>,
-    client: Arc<api::lssec::LsSecClient>,
-    position_manager: Arc<Mutex<PositionManager>>,
+    client: Arc<dyn broker::Broker>,
 }
 
 impl TradingManager {
-    pub fn new(client: api::lssec::LsSecClient) -> Self {
+    pub fn new(client: broker::lssec::LsSecClient) -> Self {
         Self {
             strategies: Vec::new(),
             client: Arc::new(client),
-            position_manager: Arc::new(Mutex::new(PositionManager::new())),
         }
     }
 
@@ -66,6 +63,7 @@ impl TradingManager {
                     log::info!("watch {}",target);
                     let mut real_data = client.get_tick_data(&target).await?;
                     let strategy_clone = strategy.clone();
+                    let client = client.clone();
                     let inner_task = tokio::spawn(async move {
                         while let Some(tick) = real_data.recv().await {
                             let decision = {
@@ -73,15 +71,7 @@ impl TradingManager {
                                 strategy.evaluate_tick(&tick).await
                             };
 
-                            match decision {
-                                Ok(decision) => {
-                                    println!("{}",decision);
-                                    // Self::execute_decision(&decision, &order_executor, &position_manager).await;
-                                }
-                                Err(e) => {
-                                    println!("Error: {}",e);
-                                }
-                            }
+                            Self::execute_decision(&decision.expect("not exist decision"),&client).await;
                         }
                     });
 
@@ -102,9 +92,9 @@ impl TradingManager {
     }
     async fn execute_decision(
         decision: &OrderDecision,
-        order_executor: &Arc<dyn OrderExecutor>,
-        position_manager: &Arc<Mutex<PositionManager>>,
+        order_executor: &Arc<dyn broker::Broker>
     ) {
+        println!("{}",decision);
         // if let Ok(()) = order_executor.execute_order(decision).await {
         //     if let Ok(mut pm) = position_manager.lock().await {
         //         let quantity = match decision.order_type {
