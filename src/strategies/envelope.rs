@@ -1,11 +1,10 @@
-use crate::model::tick::Tick;
 use crate::strategies::strategy_base::{OrderDecision,OrderType};
 use crate::strategies::strategy_base::Strategy;
 use anyhow::Result;
 use async_trait::async_trait;
-use diesel::sql_types::Bool;
 use pyo3::prelude::*;
 use pyo3::{Py, PyAny, PyResult, Python};
+use crate::broker::Tick;
 
 #[derive(Clone)]
 pub struct Envelope {}

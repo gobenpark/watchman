@@ -1,23 +1,19 @@
 mod storage;
 use teloxide::prelude::*;
 use tokio::signal;
-mod api;
+mod broker;
 mod model;
 pub mod schema;
-mod service;
+mod manager;
 mod strategies;
 use anyhow::Result;
-use broker::broker_service_client::BrokerServiceClient;
 use pretty_env_logger::env_logger::Env;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tonic::codegen::tokio_stream;
 use tonic::{transport::Server, Request, Response, Status};
-pub mod broker {
-    tonic::include_proto!("broker");
-}
 
-use service::manager::TradingManager;
+use manager::trading::TradingManager;
 use strategies::envelope::Envelope;
 
 static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
@@ -28,7 +24,7 @@ async fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let client = api::lssec::LsSecClient::new(KEY.to_string(), SECRET.to_string());
+    let client = broker::lssec::LsSecClient::new(KEY.to_string(), SECRET.to_string());
     let mut manager = TradingManager::new(client);
     let envelope = Envelope::new();
     manager.add_strategy(Box::new(envelope));
