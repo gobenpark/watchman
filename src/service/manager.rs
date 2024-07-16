@@ -1,75 +1,118 @@
+use crate::api;
+use crate::service::position_manager::PositionManager;
 use crate::strategies::strategy_base::Strategy;
 use anyhow::Result;
-use broker::broker_service_client::BrokerServiceClient;
-use tokio_stream::StreamExt;
-use tonic::{transport::Server, Request, Response, Status};
-use url::Url;
+use async_trait::async_trait;
+use std::collections::HashMap;
+use crate::strategies::strategy_base::{OrderDecision,OrderType};
+use std::sync::Arc;
+use tokio::join;
+use tokio::sync::Mutex;
 
-pub mod broker {
-    tonic::include_proto!("broker");
+#[async_trait]
+pub trait OrderExecutor: Send + Sync {
+    async fn execute_buy(&self, symbol: &str, quantity: i32) -> Result<()>;
+    async fn execute_sell(&self, symbol: &str, quantity: i32) -> Result<()>;
 }
 
 pub struct TradingManager {
-    broker: BrokerServiceClient<tonic::transport::Channel>,
-    strategies: Vec<Box<dyn Strategy>>,
+    strategies: Vec<Arc<Mutex<Box<dyn Strategy>>>>,
+    client: Arc<api::lssec::LsSecClient>,
+    position_manager: Arc<Mutex<PositionManager>>,
 }
 
 impl TradingManager {
-    pub async fn new(broker_url: Url) -> Self {
-        let mut client = BrokerServiceClient::connect(broker_url.as_str().to_string())
-            .await
-            .unwrap();
+    pub fn new(client: api::lssec::LsSecClient) -> Self {
         Self {
-            broker: client,
             strategies: Vec::new(),
+            client: Arc::new(client),
+            position_manager: Arc::new(Mutex::new(PositionManager::new())),
         }
     }
 
     pub fn add_strategy(&mut self, strategy: Box<dyn Strategy>) {
-        self.strategies.push(strategy);
+        self.strategies.push(Arc::new(Mutex::new(strategy)));
     }
 
-    fn get_all_targets(&self) -> Vec<String> {
-        self.strategies
-            .iter()
-            .map(|s| s.get_targets())
-            .flatten()
-            .collect()
+    pub async fn get_all_targets(&self) -> Vec<String> {
+        // get all targets from strategies
+        let mut targets = vec![];
+        for strategy in &self.strategies {
+            let target = {
+                let strategy = strategy.lock().await;
+                strategy.get_targets()
+            };
+            targets.extend(target);
+        }
+        targets
     }
 
-    pub async fn run(&mut self, target: Vec<String>) -> Result<()> {
-        let response = self
-            .broker
-            .watch_order_transaction(Request::new(()))
-            .await?;
-        let mut stream = response.into_inner();
+    pub async fn run(&mut self) -> Result<()> {
+        let mut tasks = Vec::new();
 
-        for i in target {
-            // self.broker.watch_transaction(Request::new(broker::WatchTransactionRequest{})).await.unwrap();
+        for strategy in &self.strategies {
+            let strategy = strategy.clone();
+            let client = self.client.clone();
+
+            let task = tokio::spawn(async move {
+                let targets = {
+                    let strategy = strategy.lock().await;
+                    strategy.get_targets()
+                };
+
+                let mut inner_tasks = Vec::new();
+
+                for target in targets {
+                    log::info!("watch {}",target);
+                    let mut real_data = client.get_tick_data(&target).await?;
+                    let strategy_clone = strategy.clone();
+                    let inner_task = tokio::spawn(async move {
+                        while let Some(tick) = real_data.recv().await {
+                            let decision = {
+                                let strategy = strategy_clone.lock().await;
+                                strategy.evaluate_tick(&tick).await
+                            };
+
+                            match decision {
+                                Ok(decision) => {
+                                    println!("{}",decision);
+                                    // Self::execute_decision(&decision, &order_executor, &position_manager).await;
+                                }
+                                Err(e) => {
+                                    println!("Error: {}",e);
+                                }
+                            }
+                        }
+                    });
+
+                    inner_tasks.push(inner_task);
+                }
+                for ta in inner_tasks{
+                    ta.await?;
+                }
+                Ok::<(), anyhow::Error>(())
+            });
+            tasks.push(task);
         }
 
-        while let Some(message) = stream.next().await {
-            println!("RESPONSE={:?}", message);
+        for task in tasks{
+            task.await??;
         }
-
-        self.broker
-            .watch_order_transaction(Request::new(()))
-            .await
-            .unwrap();
         Ok(())
     }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_create() -> Result<()> {
-        let mut cli = TradingManager::new(Url::parse("http://[::1]:50051").unwrap());
-        let result = cli.await.get_all_targets();
-        println!("{:?}", result);
-
-        Ok(())
+    async fn execute_decision(
+        decision: &OrderDecision,
+        order_executor: &Arc<dyn OrderExecutor>,
+        position_manager: &Arc<Mutex<PositionManager>>,
+    ) {
+        // if let Ok(()) = order_executor.execute_order(decision).await {
+        //     if let Ok(mut pm) = position_manager.lock().await {
+        //         let quantity = match decision.order_type {
+        //             OrderType::Buy => decision.quantity as i32,
+        //             OrderType::Sell => -(decision.quantity as i32),
+        //         };
+        //         pm.update_position(&decision.symbol, quantity);
+        //     }
+        // }
     }
 }

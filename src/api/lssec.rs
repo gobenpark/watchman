@@ -1,3 +1,4 @@
+use crate::model::tick::Tick;
 use anyhow::{anyhow, Context, Result};
 use futures_util::stream::SplitSink;
 use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
@@ -24,6 +25,7 @@ use tokio_tungstenite::tungstenite::http;
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
+
 static INIT: Once = Once::new();
 
 enum OrderAction {
@@ -78,25 +80,6 @@ impl OrderType {
             OrderType::Limit => "00",
             OrderType::Market => "03",
         }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Tick {
-    price: String,
-    #[serde(rename = "cvolume")]
-    volume: String,
-    #[serde(rename = "shcode")]
-    ticker: String,
-}
-
-impl Display for Tick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "ticker: {}, price: {}, volume: {}",
-            self.ticker, self.price, self.volume
-        )
     }
 }
 
@@ -522,12 +505,6 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_once() {
-        let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        client.get_tick_data().await;
-    }
-
-    #[tokio::test]
     async fn test_get_tickers() {
         let mut client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
         let map = client.get_tickers().await;
@@ -538,7 +515,7 @@ mod test {
     #[tokio::test]
     async fn test_websocket_connect() {
         let mut client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        client.get_tick_data2("086520").await;
+        client.get_tick_data("086520").await;
         // let _ = client.connect_websocket().await;
     }
 }
