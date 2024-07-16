@@ -20,6 +20,7 @@ static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
 static SECRET: &str = "nzWMVzES7uvxUKyK68nmXb2cHHhOOg8o";
 #[tokio::main]
 async fn main() -> Result<()> {
+    pyo3::prepare_freethreaded_python();
     pretty_env_logger::formatted_builder()
         .filter_level(log::LevelFilter::Info)
         .init();
