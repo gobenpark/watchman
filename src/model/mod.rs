@@ -1,3 +1,3 @@
 mod order;
 pub mod position;
-mod tick;
+pub mod tick;

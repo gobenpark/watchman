@@ -1,6 +1,6 @@
 mod storage;
 use teloxide::prelude::*;
-
+use tokio::signal;
 mod api;
 mod model;
 pub mod schema;
@@ -8,6 +8,7 @@ mod service;
 mod strategies;
 use anyhow::Result;
 use broker::broker_service_client::BrokerServiceClient;
+use pretty_env_logger::env_logger::Env;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tonic::codegen::tokio_stream;
@@ -16,7 +17,9 @@ pub mod broker {
     tonic::include_proto!("broker");
 }
 
-use service::strategy_manager::StrategyManager;
+use service::manager::TradingManager;
+use strategies::envelope::Envelope;
+
 static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
 static SECRET: &str = "nzWMVzES7uvxUKyK68nmXb2cHHhOOg8o";
 #[tokio::main]
@@ -26,23 +29,23 @@ async fn main() -> Result<()> {
         .init();
 
     let client = api::lssec::LsSecClient::new(KEY.to_string(), SECRET.to_string());
+    let mut manager = TradingManager::new(client);
+    let envelope = Envelope::new();
+    manager.add_strategy(Box::new(envelope));
 
-    let mut sam = client.get_tick_data("005930").await?;
 
-    let task1: JoinHandle<()> = tokio::spawn(async move {
-        while let Some(result) = sam.recv().await {
-            println!("005930: {}", result)
+    manager.run().await?;
+
+    tokio::select! {
+        result = manager.run() => {
+            if let Err(e) = result {
+                eprintln!("서버 에러: {}", e);
+            }
         }
-    });
-
-    let mut elec = client.get_tick_data("103590").await?;
-    let task2: JoinHandle<()> = tokio::spawn(async move {
-        while let Some(result) = elec.recv().await {
-            println!("103590: {}", result)
+        _ = signal::ctrl_c() => {
+            println!("종료 신호 받음, 서버 종료 중...");
         }
-    });
-
-    tokio::try_join!(task1, task2)?;
+    }
 
     log::info!("Starting...");
     Ok(())

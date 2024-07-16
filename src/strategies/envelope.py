@@ -18,6 +18,7 @@ class Envolope:
         :return: 100개의 종목 리스트
         """
         df = stock.get_market_cap(date)
+
         df.sort_values(by='거래대금', ascending=False, inplace=True)
         return list(df[:100].index.tolist())
 
@@ -92,4 +93,4 @@ class Envolope:
 
 if __name__ == '__main__':
     e = Envolope()
-    print(e.sell("028300",108150,112400))
+    print(e.buy("028300",108150))
