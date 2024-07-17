@@ -93,4 +93,5 @@ class Envolope:
 
 if __name__ == '__main__':
     e = Envolope()
-    print(e.buy("028300",108150))
+    # print(e.buy("028300",108150))
+    print(e.target())

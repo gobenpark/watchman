@@ -1,1 +1,1 @@
-DROP TABLE public.orders;
+DROP TABLE IF EXISTS public.orders;

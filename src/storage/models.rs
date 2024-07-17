@@ -10,3 +10,4 @@ pub struct Order {
     pub amount: Option<f64>,
     pub created_at: PgTimestamp,
 }
+
