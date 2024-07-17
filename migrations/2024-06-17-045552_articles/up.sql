@@ -12,8 +12,8 @@ create table public.articles
     created_at timestamp
 );
 
-alter table public.article
+alter table public.articles
     owner to postgres;
 
 create index article_embedding_idx
-    on public.article using hnsw (embedding public.vector_l2_ops);
+    on public.articles using hnsw (embedding public.vector_l2_ops);

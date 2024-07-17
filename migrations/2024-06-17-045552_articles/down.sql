@@ -1,1 +1,1 @@
-DROP TABLE public.articles;
+DROP TABLE IF EXISTS public.articles;

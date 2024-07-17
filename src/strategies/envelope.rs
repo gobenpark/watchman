@@ -77,6 +77,7 @@ impl Strategy for Envelope {
 
 #[cfg(test)]
 mod test {
+    use std::env;
     use super::*;
     #[test]
     fn test_envelope() {
@@ -87,8 +88,8 @@ mod test {
     async fn test_buy() -> Result<()>{
         pyo3::prepare_freethreaded_python();
         let env = Envelope::new();
-        // println!("{}",env.get_targets().len());
-        let _ = env.evaluate_tick(&Tick::new("005930".to_string(), "100".to_string(), "100".to_string())).await?;
+        println!("{}",env.get_targets().len());
+        // let _ = env.evaluate_tick(&Tick::new("005930".to_string(), "100".to_string(), "100".to_string())).await?;
         Ok(())
     }
 }
