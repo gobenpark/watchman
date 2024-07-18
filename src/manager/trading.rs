@@ -86,7 +86,8 @@ impl TradingManager {
         while let Some(tick) = tick_data.recv().await {
             let decision = {
                 let strategy = strategy.lock().await;
-                strategy.evaluate_tick(&tick).await
+                let p = client.get_position(tick.ticker.as_str()).await;
+                strategy.evaluate_tick(&tick,p).await
                     .context("Failed to evaluate tick")?
             };
             println!("{}",decision)
