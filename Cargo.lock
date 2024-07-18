@@ -3130,6 +3130,7 @@ dependencies = [
  "chrono",
  "diesel",
  "dotenvy",
+ "futures",
  "futures-util",
  "log",
  "moka",
@@ -3147,6 +3148,7 @@ dependencies = [
  "tokio-tungstenite",
  "tonic",
  "tonic-build",
+ "tracing",
  "url",
 ]
 

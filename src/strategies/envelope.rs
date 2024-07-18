@@ -28,11 +28,6 @@ impl Envelope {
 
 #[async_trait]
 impl Strategy for Envelope {
-    async fn on_market_data(&mut self) -> Result<()> {
-        // println!("ticker: {}, price: {}",tick.ticker, tick.price);
-        Ok(())
-    }
-
     fn get_targets(&self) -> Vec<String> {
         Python::with_gil(|py| -> PyResult<Vec<String>> {
             let instance = self.app.call0(py)?;
@@ -51,9 +46,6 @@ impl Strategy for Envelope {
             let target: bool = instance.call_method1(py, "buy", (symbol,price))?.extract(py)?;
             Ok(target)
         })?;
-
-        println!("{}",buy);
-
 
         if buy {
             Ok(OrderDecision {

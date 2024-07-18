@@ -214,8 +214,8 @@ impl LsSecClient {
         &self,
         path: &str,
         tr_cd: &str,
-        body: &serde_json::Value,
-    ) -> Result<serde_json::Value> {
+        body: &Value,
+    ) -> Result<Value> {
         let token = self.get_access_token().await?;
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("Authorization", format!("Bearer {}", token).parse()?);
@@ -406,9 +406,15 @@ mod test {
     #[tokio::test]
     async fn test_get_positions() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        let positions = client.get_positions().await;
-        for i in positions.unwrap() {
-            println!("{:?}", i)
+        let positions = client.get_positions().await.expect("");
+        let result = positions.iter().find(|p| p.ticker == "030520").take();
+        match result {
+            Some(p) => {
+                println!("{}",p.ticker)
+            },
+            None => {
+                println!("None!")
+            }
         }
     }
 
