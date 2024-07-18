@@ -391,7 +391,12 @@ impl Broker for LsSecClient {
             "CSPAT00601InBlock1": {
                 "IsuNo": format!("A{}", ticker),
                 "OrdQty": amount,
-                "OrdPrc": price,
+                "OrdPrc": || -> i64 {
+                    match order_type {
+                        OrderType::Market => 0,
+                        OrderType::Limit => price,
+                    }
+                }(),
                 "BnsTpCode": order_action.as_str(),
                 "OrdprcPtnCode": order_type.as_str(),
                 "MgntrnCode": "000",
