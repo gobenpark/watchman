@@ -33,4 +33,5 @@ impl Display for OrderDecision {
 pub enum OrderType {
     Buy,
     Sell,
+    Hold,
 }

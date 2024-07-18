@@ -95,13 +95,13 @@ impl Display for Tick {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Position {
     #[serde(rename = "expcode")]
-    ticker: String,
+    pub ticker: String,
     #[serde(rename = "janqty")]
-    quantity: i64,
+    pub quantity: i64,
     #[serde(rename = "appamt")]
     evaluation_price: f64,
     #[serde(rename = "pamt")]
-    average_price: f64,
+    pub average_price: f64,
     #[serde(rename = "dtsunik")]
     profit: f64,
     #[serde(rename = "sunikrt")]

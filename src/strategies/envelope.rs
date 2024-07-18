@@ -42,28 +42,55 @@ impl Strategy for Envelope {
         let symbol = &tick.ticker;
         let price: f64 = tick.price.parse()?;
 
-        let buy = Python::with_gil(|py| -> PyResult<bool> {
-            let instance = self.app.call0(py)?;
-            let target: bool = instance.call_method1(py, "buy", (symbol,price))?.extract(py)?;
-            Ok(target)
-        })?;
+        match position {
+            Some(p) => {
+                let sell = Python::with_gil(|py| -> PyResult<bool> {
+                    let instance = self.app.call0(py)?;
+                    let target: bool = instance.call_method1(py, "sell", (symbol, price, p.average_price))?.extract(py)?;
+                    Ok(target)
+                })?;
 
-        if buy {
-            Ok(OrderDecision {
-                order_type: OrderType::Buy,
-                symbol: tick.ticker.clone(),
-                quantity: 1,
-                price: price,
-                reason: "Buy signal detected".to_string(),
-            })
-        } else {
-            Ok(OrderDecision {
-                order_type: OrderType::Sell,
-                symbol: tick.ticker.clone(),
-                quantity: 1,
-                price: price,
-                reason: "Sell signal detected".to_string(),
-            })
+                if sell {
+                    return Ok(OrderDecision {
+                        order_type: OrderType::Sell,
+                        symbol: tick.ticker.clone(),
+                        quantity: 1,
+                        price: price,
+                        reason: "Buy signal detected".to_string(),
+                    })
+                }
+                Ok(OrderDecision{
+                    order_type: OrderType::Hold,
+                    symbol: tick.ticker.clone(),
+                    quantity: 1,
+                    price: price,
+                    reason: "Hold signal detected".to_string(),
+                })
+            },
+            None => {
+                let buy = Python::with_gil(|py| -> PyResult<bool> {
+                    let instance = self.app.call0(py)?;
+                    let target: bool = instance.call_method1(py, "buy", (symbol, price))?.extract(py)?;
+                    Ok(target)
+                })?;
+
+                if buy {
+                    return Ok(OrderDecision {
+                        order_type: OrderType::Buy,
+                        symbol: tick.ticker.clone(),
+                        quantity: 1,
+                        price: price,
+                        reason: "Buy signal detected".to_string(),
+                    })
+                }
+                Ok(OrderDecision{
+                    order_type: OrderType::Hold,
+                    symbol: tick.ticker.clone(),
+                    quantity: 1,
+                    price: price,
+                    reason: "Hold signal detected".to_string(),
+                })
+            }
         }
     }
 }
