@@ -90,9 +90,8 @@ impl TradingManager {
                 strategy.evaluate_tick(&tick,p).await
                     .context("Failed to evaluate tick")?
             };
-            println!("{}",decision)
-
-            // self.execute_decision(&decision, &client).await?;
+            let client= client.clone();
+            self.execute_decision(&decision,client);
         }
 
         Ok(())
@@ -101,17 +100,22 @@ impl TradingManager {
     async fn execute_decision(
         &self,
         decision: &OrderDecision,
-        client: &Arc<dyn broker::Broker>
+        client: Arc<dyn broker::Broker>
     ) -> Result<()> {
         match decision.order_type {
             OrderType::Buy => {
+                client.order(&decision.symbol, 1, decision.price as i64, broker::OrderAction::Buy, broker::OrderType::Market)
+                    .await
+                    .context("Failed to execute buy order")?;
                 // client.execute_buy(&decision.symbol, decision.quantity).await
                 //     .context("Failed to execute buy order")?;
             },
             OrderType::Sell => {
-                // client.execute_sell(&decision.symbol, decision.quantity).await
-                //     .context("Failed to execute sell order")?;
+                client.order(&decision.symbol, 1, decision.price as i64, broker::OrderAction::Sell, broker::OrderType::Market)
+                    .await
+                    .context("Failed to execute buy order")?;
             },
+            OrderType::Hold => {}
         }
 
         info!("Executed decision: {:?}", decision);

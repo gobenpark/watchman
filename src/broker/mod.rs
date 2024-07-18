@@ -34,12 +34,12 @@ impl TryFrom<&str> for Market {
     }
 }
 
-enum OrderAction {
+pub enum OrderAction {
     Buy,
     Sell,
 }
 
-enum OrderType {
+pub enum OrderType {
     Limit,
     Market,
 }
