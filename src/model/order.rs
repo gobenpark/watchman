@@ -1,7 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
-use diesel::sql_types::*;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::orders)]

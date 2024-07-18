@@ -5,7 +5,6 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait Strategy: Send + Sync {
-    async fn on_market_data(&mut self) -> Result<()>;
     fn get_targets(&self) -> Vec<String>;
     async fn evaluate_tick(&self, tick: &Tick) -> Result<OrderDecision>;
 }

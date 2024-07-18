@@ -25,7 +25,7 @@ impl Display for Market {
 impl TryFrom<&str> for Market {
     type Error = anyhow::Error;
 
-    fn try_from(code: &str) -> anyhow::Result<Self, Self::Error> {
+    fn try_from(code: &str) -> Result<Self, Self::Error> {
         match code {
             "1" => Ok(Market::KOSPI),
             "2" => Ok(Market::KOSDAQ),
@@ -93,7 +93,7 @@ impl Display for Tick {
 
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Position {
+pub struct Position {
     #[serde(rename = "expcode")]
     ticker: String,
     #[serde(rename = "janqty")]

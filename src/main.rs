@@ -7,7 +7,6 @@ pub mod schema;
 mod manager;
 mod strategies;
 use anyhow::Result;
-use pretty_env_logger::env_logger::Env;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tonic::codegen::tokio_stream;
