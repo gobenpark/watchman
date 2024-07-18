@@ -92,7 +92,7 @@ impl Display for Tick {
 }
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Position {
     #[serde(rename = "expcode")]
     ticker: String,
@@ -120,6 +120,7 @@ pub trait Broker: Send + Sync {
     async fn get_tick_data(&self, ticker: &str) -> Result<(Receiver<Tick>)>;
     async fn get_balance(&self) -> Result<i64>;
     async fn get_positions(&self) -> Result<Vec<Position>>;
+    async fn get_position(&self,symbol: &str) -> Option<Position>;
     async fn order_cancel(&self, order_number: i64, ticker: &str, amount: i64) -> Result<()>;
     async fn order(
         &self,

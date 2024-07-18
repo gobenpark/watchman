@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use pyo3::prelude::*;
 use pyo3::{Py, PyAny, PyResult, Python};
+use crate::broker;
 use crate::broker::Tick;
 
 pub struct Envelope {
@@ -37,7 +38,7 @@ impl Strategy for Envelope {
         .expect("Failed to get targets from python")
     }
 
-    async fn evaluate_tick(&self, tick: &Tick) -> Result<OrderDecision> {
+    async fn evaluate_tick(&self, tick: &Tick, position: Option<broker::Position>) -> Result<OrderDecision> {
         let symbol = &tick.ticker;
         let price: f64 = tick.price.parse()?;
 

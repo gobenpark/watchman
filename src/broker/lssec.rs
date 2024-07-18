@@ -1,31 +1,34 @@
-use anyhow::{anyhow, Context, Result};
-use futures_util::stream::SplitSink;
-use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
-use moka::future::Cache;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use std::{fmt, time};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
-use std::{fmt, time};
+
+use anyhow::{anyhow, Context, Result};
+use async_trait::async_trait;
+use diesel::row::NamedRow;
+use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use futures_util::stream::SplitSink;
+use moka::future::Cache;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use teloxide::dptree::di::DependencySupplier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::sync::OnceCell;
+use tokio_tungstenite::{
+    connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
+};
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::http;
-use tokio_tungstenite::{
-    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
-};
-use crate::broker::{Market,Broker,OrderType,OrderAction,Tick,Position};
-use async_trait::async_trait;
+
+use crate::broker::{Broker, Market, OrderAction, OrderType, Position, Tick};
 
 static INIT: Once = Once::new();
 
@@ -39,6 +42,7 @@ pub struct LsSecClient {
     tickers: Arc<OnceCell<HashMap<String, Market>>>,
     ws_sender: Arc<Mutex<Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>>,
     tick_channels: Arc<Mutex<HashMap<String, Sender<Tick>>>>,
+    position: Arc<OnceCell<Cache<String,Position>>>
 }
 
 impl Clone for LsSecClient {
@@ -53,6 +57,7 @@ impl Clone for LsSecClient {
             tickers: Arc::clone(&self.tickers),
             ws_sender: Arc::clone(&self.ws_sender),
             tick_channels: Arc::clone(&self.tick_channels),
+            position: self.position.clone()
         }
     }
 }
@@ -70,6 +75,7 @@ impl LsSecClient {
             tickers: Arc::new(OnceCell::new()),
             ws_sender: Arc::new(Mutex::new(None)),
             tick_channels: Arc::new(Mutex::new(HashMap::new())),
+            position: Arc::new(OnceCell::new())
         }
     }
 
@@ -285,10 +291,6 @@ impl Broker for LsSecClient {
         }
     }
 
-
-
-
-
     async fn get_balance(&self) -> Result<i64> {
         let result = self
             .api_call(
@@ -308,6 +310,28 @@ impl Broker for LsSecClient {
             .and_then(|block| block.get("MnyOrdAbleAmt"))
             .and_then(|amt| amt.as_i64())
             .context("Failed to get balance")
+    }
+
+    async fn get_position(&self,symbol: &str) -> Option<Position> {
+
+        let data: Result<&Cache<String, Position>> = self.position.get_or_try_init(|| async {
+            log::info!("init position cache");
+            let positions = self.get_positions().await?;
+            let cache = Cache::new(10_000);
+            for position in positions {
+                cache.insert(position.ticker.to_string(),position).await
+            }
+            Ok(cache)
+        }).await;
+
+        match data {
+            Ok(o) => {
+                o.get(symbol).await
+            },
+            Err(e) => {
+                None
+            }
+        }
     }
 
     async fn get_positions(&self) -> Result<Vec<Position>> {
@@ -336,6 +360,7 @@ impl Broker for LsSecClient {
             .map(|x| serde_json::from_value(x.clone()))
             .collect::<Result<Vec<Position>, _>>()
             .context("Failed to deserialize positions")?;
+
 
         Ok(positions)
     }
@@ -387,20 +412,19 @@ impl Broker for LsSecClient {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
     static SECRET: &str = "nzWMVzES7uvxUKyK68nmXb2cHHhOOg8o";
     static TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0b2tlbiIsImF1ZCI6ImZlY2YzZGFlLWZkMjQtNGMwNy1iZjJlLTdmYjYxYjdjZDgzYiIsIm5iZiI6MTcxOTc5NzQ2NiwiZ3JhbnRfdHlwZSI6IkNsaWVudCIsImlzcyI6InVub2d3IiwiZXhwIjoxNzE5ODcxMTk5LCJpYXQiOjE3MTk3OTc0NjYsImp0aSI6IlBTNDVoSUZ3MVh1N2FwemlMUWRVYzRqTkxheklQYWNRZHFjWCJ9.K5j0SV4BLfV573jObRPy3pV03mQQ36FpL7twgYJvJC8Y3hUHImFO0NFk0_dHt1v6YlkPQWBUYP_H5OEFZm522Q";
 
-    use super::*;
-    use serde_json::Value::String;
-    use std::collections::HashMap;
-    use teloxide::types::CountryCode::LS;
     #[tokio::test]
     async fn test() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
         let token = client.get_access_token().await.unwrap();
         // let token = client.get_access_token().await.unwrap();
-        println!("{:?}", token)
+        println!("{:?}", token);
+
     }
 
     #[tokio::test]
@@ -421,6 +445,8 @@ mod test {
     #[tokio::test]
     async fn test_order() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
+        let result = client.get_position("005949").await;
+
     }
 
     #[tokio::test]
@@ -441,7 +467,15 @@ mod test {
     #[tokio::test]
     async fn test_websocket_connect() {
         let mut client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        client.get_tick_data("086520").await;
+        let data = client.get_position("030520").await;
+        match data {
+            Some(d) => {
+                println!("{}",d.ticker)
+            },
+            None => {
+                println!("none")
+            }
+        }
         // let _ = client.connect_websocket().await;
     }
 }
