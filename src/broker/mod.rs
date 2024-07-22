@@ -160,5 +160,6 @@ pub trait Broker: Send + Sync {
         price: i64,
         order_action: OrderAction,
         order_type: OrderType,
+        force: bool
     ) -> Result<Order>;
 }

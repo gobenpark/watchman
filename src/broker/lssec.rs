@@ -27,6 +27,7 @@ use tokio_tungstenite::{
 };
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::http;
+
 use crate::broker;
 use crate::broker::{Broker, Market, Order, OrderAction, OrderType, Position, Tick};
 
@@ -189,9 +190,11 @@ impl LsSecClient {
                                                     None => {}
                                                 }
                                             }
+
+
+
                                         },
                                         "SC3" => {
-                                            println!("취소 접수됨")
                                         },
                                         _ => {
                                             println!("none value1")
@@ -476,15 +479,31 @@ impl Broker for LsSecClient {
 
     async fn order(
         &self,
-        ticker: &str,
+        symbol: &str,
         amount: i64,
         price: i64,
         order_action: OrderAction,
         order_type: OrderType,
+        force: bool
     ) -> Result<Order> {
+
+        let od = {
+            let orders = self.orders.lock().await;
+            orders.iter().find(|o| o.symbol == symbol).map(|o| o.clone())
+        };
+
+        match od {
+            Some(od) => {
+                if !force {
+                    return Ok(od.clone());
+                }
+            },
+            None => {}
+        }
+
         let body = serde_json::json!({
             "CSPAT00601InBlock1": {
-                "IsuNo": format!("A{}", ticker),
+                "IsuNo": format!("A{}", symbol),
                 "OrdQty": amount,
                 "OrdPrc": || -> i64 {
                     match order_type {
@@ -507,7 +526,7 @@ impl Broker for LsSecClient {
             .and_then(|ord_no| ord_no.as_i64())
             .context("Failed to get order number")?;
 
-        let order = Order::new(id,ticker.to_string(),amount,price,order_action,order_type);
+        let order = Order::new(id,symbol.to_string(),amount,price,order_action,order_type);
         let mut orders = self.orders.lock().await;
         let od = order.clone();
         orders.push_back(order);
@@ -519,7 +538,6 @@ impl Broker for LsSecClient {
 
 #[cfg(test)]
 mod test {
-    use std::collections::VecDeque;
     use super::*;
 
     static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
