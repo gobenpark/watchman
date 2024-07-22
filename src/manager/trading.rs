@@ -1,11 +1,11 @@
 use crate::broker;
-use crate::strategies::strategy_base::{Strategy, OrderDecision, OrderType};
-use anyhow::{Result, Context};
+use crate::strategies::strategy_base::{OrderDecision, OrderType, Strategy};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
+use futures::future::join_all;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use futures::future::join_all;
-use tracing::{info, error};
+use tracing::{error, info};
 
 #[async_trait]
 pub trait OrderExecutor: Send + Sync {
@@ -46,7 +46,8 @@ impl TradingManager {
             self.run_strategy(strategy, client)
         });
 
-        join_all(strategy_tasks).await
+        join_all(strategy_tasks)
+            .await
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
 
@@ -63,11 +64,12 @@ impl TradingManager {
             strategy.get_targets()
         };
 
-        let target_tasks = targets.into_iter().map(|target| {
-            self.watch_target(Arc::clone(&strategy), Arc::clone(&client), target)
-        });
+        let target_tasks = targets
+            .into_iter()
+            .map(|target| self.watch_target(Arc::clone(&strategy), Arc::clone(&client), target));
 
-        join_all(target_tasks).await
+        join_all(target_tasks)
+            .await
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
 
@@ -87,11 +89,13 @@ impl TradingManager {
             let decision = {
                 let strategy = strategy.lock().await;
                 let p = client.get_position(tick.ticker.as_str()).await;
-                strategy.evaluate_tick(&tick,p).await
+                strategy
+                    .evaluate_tick(&tick, p)
+                    .await
                     .context("Failed to evaluate tick")?
             };
-            let client= client.clone();
-            self.execute_decision(&decision,client);
+            let client = client.clone();
+            self.execute_decision(&decision, client);
         }
 
         Ok(())
@@ -100,21 +104,35 @@ impl TradingManager {
     async fn execute_decision(
         &self,
         decision: &OrderDecision,
-        client: Arc<dyn broker::Broker>
+        client: Arc<dyn broker::Broker>,
     ) -> Result<()> {
         match decision.order_type {
             OrderType::Buy => {
-                client.order(&decision.symbol, 1, decision.price as i64, broker::OrderAction::Buy, broker::OrderType::Market)
+                client
+                    .order(
+                        &decision.symbol,
+                        1,
+                        decision.price as i64,
+                        broker::OrderAction::Buy,
+                        broker::OrderType::Market,
+                    )
                     .await
                     .context("Failed to execute buy order")?;
                 // client.execute_buy(&decision.symbol, decision.quantity).await
                 //     .context("Failed to execute buy order")?;
-            },
+            }
             OrderType::Sell => {
-                client.order(&decision.symbol, 1, decision.price as i64, broker::OrderAction::Sell, broker::OrderType::Market)
+                client
+                    .order(
+                        &decision.symbol,
+                        1,
+                        decision.price as i64,
+                        broker::OrderAction::Sell,
+                        broker::OrderType::Market,
+                    )
                     .await
                     .context("Failed to execute buy order")?;
-            },
+            }
             OrderType::Hold => {}
         }
 

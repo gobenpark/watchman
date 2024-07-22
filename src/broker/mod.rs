@@ -1,12 +1,12 @@
 pub mod lssec;
 
+use anyhow::Result;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Receiver;
-use anyhow::Result;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Market {
     KOSPI,
@@ -34,11 +34,14 @@ impl TryFrom<&str> for Market {
     }
 }
 
+#[derive(Copy)]
+#[derive(Clone, Debug)]
 pub enum OrderAction {
     Buy,
     Sell,
 }
 
+#[derive(Copy,Clone, Debug)]
 pub enum OrderType {
     Limit,
     Market,
@@ -58,6 +61,36 @@ impl OrderType {
         match self {
             OrderType::Limit => "00",
             OrderType::Market => "03",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Order {
+    id: i64,
+    symbol: String,
+    quantity: i64 ,
+    price: i64,
+    action: OrderAction,
+    order_type: OrderType,
+}
+
+impl Order {
+    fn new(
+        id: i64,
+        symbol: String,
+        quantity: i64,
+        price: i64,
+        action: OrderAction,
+        order_type: OrderType,
+    ) -> Self {
+        Self {
+            id,
+            symbol,
+            quantity,
+            price,
+            action,
+            order_type,
         }
     }
 }
@@ -91,7 +124,6 @@ impl Display for Tick {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Position {
     #[serde(rename = "expcode")]
@@ -112,16 +144,15 @@ pub struct Position {
     tax: f64,
 }
 
-
-
 #[async_trait]
 pub trait Broker: Send + Sync {
     async fn get_tickers(&self) -> Result<HashMap<String, Market>>;
     async fn get_tick_data(&self, ticker: &str) -> Result<(Receiver<Tick>)>;
     async fn get_balance(&self) -> Result<i64>;
     async fn get_positions(&self) -> Result<Vec<Position>>;
-    async fn get_position(&self,symbol: &str) -> Option<Position>;
-    async fn order_cancel(&self, order_number: i64, ticker: &str, amount: i64) -> Result<()>;
+    async fn get_position(&self, symbol: &str) -> Option<Position>;
+    async fn order_cancel(&self, order: Order) -> Result<()>;
+    async fn get_access_token(&self) -> Result<String>;
     async fn order(
         &self,
         ticker: &str,
@@ -129,5 +160,5 @@ pub trait Broker: Send + Sync {
         price: i64,
         order_action: OrderAction,
         order_type: OrderType,
-    ) -> anyhow::Result<i64>;
+    ) -> Result<Order>;
 }

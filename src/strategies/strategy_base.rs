@@ -1,13 +1,17 @@
-use std::fmt::Display;
+use crate::broker;
 use crate::broker::Tick;
 use anyhow::Result;
 use async_trait::async_trait;
-use crate::broker;
+use std::fmt::Display;
 
 #[async_trait]
 pub trait Strategy: Send + Sync {
     fn get_targets(&self) -> Vec<String>;
-    async fn evaluate_tick(&self, tick: &Tick, position: Option<broker::Position>) -> Result<OrderDecision>;
+    async fn evaluate_tick(
+        &self,
+        tick: &Tick,
+        position: Option<broker::Position>,
+    ) -> Result<OrderDecision>;
 }
 
 #[derive(Debug, Clone)]
