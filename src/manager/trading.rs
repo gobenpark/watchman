@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::broker;
 use crate::strategies::strategy_base::{OrderDecision, OrderType, Strategy};
 use anyhow::{Context, Result};
@@ -59,10 +60,19 @@ impl TradingManager {
         strategy: Arc<Mutex<Box<dyn Strategy>>>,
         client: Arc<dyn broker::Broker>,
     ) -> Result<()> {
-        let targets = {
+        let mut targets = {
             let strategy = strategy.lock().await;
             strategy.get_targets()
         };
+
+
+        let positons = client.get_positions().await?;
+        let ttargets: Vec<String> = positons.iter().map(|p| {
+            p.ticker.clone()
+        }).collect();
+        targets.extend(ttargets);
+        let new_symbols: HashSet<String> = targets.into_iter().collect();
+        targets = new_symbols.into_iter().collect();
 
         let target_tasks = targets
             .into_iter()
@@ -95,7 +105,7 @@ impl TradingManager {
                     .context("Failed to evaluate tick")?
             };
             let client = client.clone();
-            self.execute_decision(&decision, client);
+            self.execute_decision(&decision, client).await;
         }
 
         Ok(())
@@ -106,6 +116,7 @@ impl TradingManager {
         decision: &OrderDecision,
         client: Arc<dyn broker::Broker>,
     ) -> Result<()> {
+        log::info!("decision: {}",decision);
         match decision.order_type {
             OrderType::Buy => {
                 client
@@ -115,6 +126,7 @@ impl TradingManager {
                         decision.price as i64,
                         broker::OrderAction::Buy,
                         broker::OrderType::Market,
+                        false,
                     )
                     .await
                     .context("Failed to execute buy order")?;
@@ -129,6 +141,7 @@ impl TradingManager {
                         decision.price as i64,
                         broker::OrderAction::Sell,
                         broker::OrderType::Market,
+                        true,
                     )
                     .await
                     .context("Failed to execute buy order")?;
