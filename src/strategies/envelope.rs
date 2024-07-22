@@ -1,11 +1,11 @@
-use crate::strategies::strategy_base::{OrderDecision,OrderType};
+use crate::broker;
+use crate::broker::Tick;
 use crate::strategies::strategy_base::Strategy;
+use crate::strategies::strategy_base::{OrderDecision, OrderType};
 use anyhow::Result;
 use async_trait::async_trait;
 use pyo3::prelude::*;
 use pyo3::{Py, PyAny, PyResult, Python};
-use crate::broker;
-use crate::broker::Tick;
 
 pub struct Envelope {
     app: Py<PyAny>,
@@ -14,12 +14,14 @@ pub struct Envelope {
 impl Envelope {
     pub fn new() -> Self {
         let py_app = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/strategies/envelope.py"
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/strategies/envelope.py"
         ));
-        let app = Python::with_gil(|py| -> Py<PyAny>{
-            PyModule::from_code_bound(py, py_app, "", "").unwrap()
-                .getattr("Envolope").unwrap()
+        let app = Python::with_gil(|py| -> Py<PyAny> {
+            PyModule::from_code_bound(py, py_app, "", "")
+                .unwrap()
+                .getattr("Envolope")
+                .unwrap()
                 .into()
         });
 
@@ -38,7 +40,11 @@ impl Strategy for Envelope {
         .expect("Failed to get targets from python")
     }
 
-    async fn evaluate_tick(&self, tick: &Tick, position: Option<broker::Position>) -> Result<OrderDecision> {
+    async fn evaluate_tick(
+        &self,
+        tick: &Tick,
+        position: Option<broker::Position>,
+    ) -> Result<OrderDecision> {
         let symbol = &tick.ticker;
         let price: f64 = tick.price.parse()?;
 
@@ -46,7 +52,9 @@ impl Strategy for Envelope {
             Some(p) => {
                 let sell = Python::with_gil(|py| -> PyResult<bool> {
                     let instance = self.app.call0(py)?;
-                    let target: bool = instance.call_method1(py, "sell", (symbol, price, p.average_price))?.extract(py)?;
+                    let target: bool = instance
+                        .call_method1(py, "sell", (symbol, price, p.average_price))?
+                        .extract(py)?;
                     Ok(target)
                 })?;
 
@@ -57,20 +65,22 @@ impl Strategy for Envelope {
                         quantity: 1,
                         price: price,
                         reason: "Buy signal detected".to_string(),
-                    })
+                    });
                 }
-                Ok(OrderDecision{
+                Ok(OrderDecision {
                     order_type: OrderType::Hold,
                     symbol: tick.ticker.clone(),
                     quantity: 1,
                     price: price,
                     reason: "Hold signal detected".to_string(),
                 })
-            },
+            }
             None => {
                 let buy = Python::with_gil(|py| -> PyResult<bool> {
                     let instance = self.app.call0(py)?;
-                    let target: bool = instance.call_method1(py, "buy", (symbol, price))?.extract(py)?;
+                    let target: bool = instance
+                        .call_method1(py, "buy", (symbol, price))?
+                        .extract(py)?;
                     Ok(target)
                 })?;
 
@@ -81,9 +91,9 @@ impl Strategy for Envelope {
                         quantity: 1,
                         price: price,
                         reason: "Buy signal detected".to_string(),
-                    })
+                    });
                 }
-                Ok(OrderDecision{
+                Ok(OrderDecision {
                     order_type: OrderType::Hold,
                     symbol: tick.ticker.clone(),
                     quantity: 1,
@@ -97,18 +107,18 @@ impl Strategy for Envelope {
 
 #[cfg(test)]
 mod test {
-    use std::env;
     use super::*;
+    use std::env;
     #[test]
     fn test_envelope() {
         let env = Envelope::new();
     }
 
     #[tokio::test]
-    async fn test_buy() -> Result<()>{
+    async fn test_buy() -> Result<()> {
         pyo3::prepare_freethreaded_python();
         let env = Envelope::new();
-        println!("{}",env.get_targets().len());
+        println!("{}", env.get_targets().len());
         // let _ = env.evaluate_tick(&Tick::new("005930".to_string(), "100".to_string(), "100".to_string())).await?;
         Ok(())
     }
