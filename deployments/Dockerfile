@@ -16,7 +16,7 @@ RUN rm ./target/release/deps/watchman*
 RUN cargo build --release
 
 FROM python:3.11-slim as python-base
-
+RUN apt-get update && apt-get install -y wget
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
   tar -xvzf ta-lib-0.4.0-src.tar.gz && \
   cd ta-lib/ && \
