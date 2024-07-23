@@ -16,7 +16,7 @@ RUN rm ./target/release/deps/watchman*
 RUN cargo build --release
 
 FROM python:3.11-slim as python-base
-RUN pip install pykrx finance-datareader ta-lib
+
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
   tar -xvzf ta-lib-0.4.0-src.tar.gz && \
   cd ta-lib/ && \
@@ -25,6 +25,7 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
   make install
 
 RUN rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+RUN pip install pykrx finance-datareader ta-lib
 COPY --from=build /watchman/target/release/watchman .
 
 CMD ["./watchman"]
