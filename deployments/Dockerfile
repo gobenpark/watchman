@@ -1,4 +1,4 @@
-FROM rust:1.77-slim-buster as build
+FROM rust:1.79-slim-buster as build
 
 RUN USER=root cargo new --bin watchman
 WORKDIR /watchman
@@ -11,10 +11,10 @@ RUN rm src/*.rs
 
 COPY ./src ./src
 
-RUN rm ./target/release/deps/discord*
+RUN rm ./target/release/deps/watchman*
 RUN cargo build --release
 
-FROM rust:1.77-slim-buster
+FROM rust:1.79-slim-buster
 
 COPY --from=build /watchman/target/release/watchman .
 
