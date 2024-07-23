@@ -55,12 +55,12 @@ jobs:
       - name: Change manifest
         uses: mikefarah/yq@master
         with:
-          cmd: yq e --inplace '.image.tag = "${{ needs.build.outputs.TAG }}"' watcher.yaml
+          cmd: yq e --inplace '.image.tag = "${{ needs.build.outputs.TAG }}"' watchman.yaml
       - name: git push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config credential.helper store
-          git add watcher.yaml
+          git add watchman.yaml
           git commit -m "🎉 Update: Image [${{ needs.build.outputs.TAG }}]"
           git push
