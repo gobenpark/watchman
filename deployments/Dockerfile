@@ -17,7 +17,7 @@ RUN cargo build --release
 
 FROM rust:1.79-slim-buster
 RUN apt-get update && apt-get install -y python3 python3-pip pkg-config libssl-dev
-
+RUN pip install
 COPY --from=build /watchman/target/release/watchman .
 
 CMD ["./watchman"]
