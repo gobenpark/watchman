@@ -1,0 +1,66 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        name: Checkout
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # list of Docker images to use as base name for tags
+          images: |
+            ghcr.io/${{ github.repository }}
+          tags: |
+            latest
+            ${{ github.sha }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: |
+            linux/arm64
+            linux/amd64
+          file: ./deployments/Dockerfile
+          push: true
+          labels: ${{ steps.meta.outputs.labels}}
+          tags: ${{ steps.meta.outputs.tags }}
+  artifact:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: gobenpark/artifact
+          token: ${{ secrets.MY_PAT }}
+          ref: main
+      #          yq e --inplace ".image.repository = \"us-west1-docker.pkg.dev/swit-dev/dev/swit-grpc/backend-grpc/$BRANCH_NAME:$COMMIT_SHA\"" /root/cicd/workloads/backend_values.yaml
+      - name: Change manifest
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e --inplace '.image.tag = "${{ needs.build.outputs.TAG }}"' discord.yaml
+      - name: git push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config credential.helper store
+          git add discord.yaml
+          git commit -m "🎉 Update: Image [${{ needs.build.outputs.TAG }}]"
+          git push
