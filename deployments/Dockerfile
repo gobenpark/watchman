@@ -1,5 +1,6 @@
 FROM rust:1.79-slim-buster as build
 
+RUN apt-get update && apt-get install -y pkg-config libssl-dev
 RUN USER=root cargo new --bin watchman
 WORKDIR /watchman
 
