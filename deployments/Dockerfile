@@ -1,6 +1,6 @@
 FROM rust:1.77-slim-buster as build
 
-RUN USER=root cargo new --bin discord
+RUN USER=root cargo new --bin watchman
 WORKDIR /watchman
 
 COPY ./Cargo.lock ./Cargo.lock
