@@ -1,5 +1,6 @@
 mod storage;
 
+use std::env;
 use std::thread::sleep;
 use teloxide::prelude::*;
 use tokio::signal;
@@ -16,25 +17,27 @@ use tonic::{transport::Server, Request, Response, Status};
 use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use manager::trading::TradingManager;
 use strategies::envelope::Envelope;
+use dotenvy::dotenv;
 use crate::broker::{Broker, OrderAction, OrderType};
 use tokio_tungstenite::{
     connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
 };
-static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
-static SECRET: &str = "nzWMVzES7uvxUKyK68nmXb2cHHhOOg8o";
+use tracing::{info,error};
+use tracing_subscriber;
+
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenv().ok();
     pyo3::prepare_freethreaded_python();
-    pretty_env_logger::formatted_builder()
-        .filter_level(log::LevelFilter::Info)
-        .init();
+    tracing_subscriber::fmt::init();
 
-    let client = broker::lssec::LsSecClient::new(KEY.to_string(), SECRET.to_string());
+    let key = env::var("LSSEC_KEY")?;
+    let secret = env::var("LSSEC_SECRET")?;
+    let client = broker::lssec::LsSecClient::new(key, secret);
     let mut manager = TradingManager::new(client);
     let envelope = Envelope::new();
     manager.add_strategy(Box::new(envelope));
-
-    manager.run().await?;
 
     tokio::select! {
         result = manager.run() => {
@@ -43,8 +46,7 @@ async fn main() -> Result<()> {
             }
         }
         _ = signal::ctrl_c() => {
-            log::info!("shutdown server ...");
-            println!("종료 신호 받음, 서버 종료 중...");
+            info!("shutdown server ...");
         }
     }
 
