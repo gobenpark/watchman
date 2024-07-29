@@ -65,7 +65,6 @@ impl TradingManager {
             strategy.get_targets()
         };
 
-
         let positons = client.get_positions().await?;
         let ttargets: Vec<String> = positons.iter().map(|p| {
             p.ticker.clone()
@@ -116,7 +115,6 @@ impl TradingManager {
         decision: &OrderDecision,
         client: Arc<dyn broker::Broker>,
     ) -> Result<()> {
-        log::info!("decision: {}",decision);
         match decision.order_type {
             OrderType::Buy => {
                 client
@@ -130,6 +128,7 @@ impl TradingManager {
                     )
                     .await
                     .context("Failed to execute buy order")?;
+                log::info!("decision: {}",decision);
                 // client.execute_buy(&decision.symbol, decision.quantity).await
                 //     .context("Failed to execute buy order")?;
             }
@@ -145,11 +144,11 @@ impl TradingManager {
                     )
                     .await
                     .context("Failed to execute buy order")?;
+                log::info!("decision: {}",decision);
             }
             OrderType::Hold => {}
         }
 
-        info!("Executed decision: {:?}", decision);
         Ok(())
     }
 }

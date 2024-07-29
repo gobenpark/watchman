@@ -123,7 +123,7 @@ impl LsSecClient {
     }
 
     pub async fn connection_trasaction(&self) -> Result<()> {
-        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
+        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:29443/websocket").await?;
         let (mut write, mut read) = ws_stream.split();
         let token = self.get_access_token().await?.clone();
         write.send(Message::text(serde_json::json!({
@@ -196,14 +196,10 @@ impl LsSecClient {
                                         },
                                         "SC3" => {
                                         },
-                                        _ => {
-                                            println!("none value1")
-                                        }
+                                        _ => {}
                                     }
                                 },
-                                None => {
-                                    println!("none value")
-                                }
+                                None => {}
                             }
                         }
                     }
@@ -538,11 +534,11 @@ impl Broker for LsSecClient {
 
 #[cfg(test)]
 mod test {
+    use futures_util::future::join_all;
     use super::*;
 
-    static KEY: &str = "PS45hIFw1Xu7apziLQdUc4jNLazIPacQdqcX";
-    static SECRET: &str = "nzWMVzES7uvxUKyK68nmXb2cHHhOOg8o";
-    static TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0b2tlbiIsImF1ZCI6ImZlY2YzZGFlLWZkMjQtNGMwNy1iZjJlLTdmYjYxYjdjZDgzYiIsIm5iZiI6MTcxOTc5NzQ2NiwiZ3JhbnRfdHlwZSI6IkNsaWVudCIsImlzcyI6InVub2d3IiwiZXhwIjoxNzE5ODcxMTk5LCJpYXQiOjE3MTk3OTc0NjYsImp0aSI6IlBTNDVoSUZ3MVh1N2FwemlMUWRVYzRqTkxheklQYWNRZHFjWCJ9.K5j0SV4BLfV573jObRPy3pV03mQQ36FpL7twgYJvJC8Y3hUHImFO0NFk0_dHt1v6YlkPQWBUYP_H5OEFZm522Q";
+    static KEY: &str = "PSA0cTqjeDE2hoNUclL2tiHgOLLQwzdkX43e";
+    static SECRET: &str = "H0jIqEYl6cqNGr7CyyfHfN2Ns1hPiRR7";
 
     #[tokio::test]
     async fn test() {
@@ -610,7 +606,7 @@ mod test {
         client.connection_trasaction().await.unwrap();
         tokio::time::sleep(std::time::Duration::from_secs(2));
 
-        let result = client.order("092190",1,4200,OrderAction::Buy,OrderType::Limit).await.expect("error order");
+        let result = client.order("092190",1,4200,OrderAction::Buy,OrderType::Limit,false).await.expect("error order");
         tokio::time::sleep(time::Duration::from_secs(2));
         client.order_cancel(result).await.expect("error cancel");
         tokio::time::sleep(time::Duration::from_secs(2));
@@ -622,10 +618,33 @@ mod test {
         client.connection_trasaction().await.unwrap();
         tokio::time::sleep(time::Duration::from_secs(2)).await;
 
-        let result = client.order("092190",1,0,OrderAction::Buy,OrderType::Market).await.expect("error order");
+        let result = client.order("092190",1,0,OrderAction::Buy,OrderType::Market,false).await.expect("error order");
         tokio::time::sleep(time::Duration::from_secs(2)).await;
         client.order_cancel(result).await.expect("error cancel");
         tokio::time::sleep(time::Duration::from_secs(2)).await;
+    }
+
+    #[tokio::test]
+    async fn test_tick() {
+        let client = Arc::new(LsSecClient::new(KEY.to_string(), SECRET.to_string()));
+
+        let result = client.get_tickers().await.unwrap();
+        let results = Arc::new(result);
+
+        let mut sps = Vec::new();
+        for (k,v) in results.iter(){
+            let client = Arc::clone(&client);
+            let result = Arc::clone(&results);
+            let k = k.clone();
+            let handler = tokio::task::spawn(async move {
+                let mut data = client.get_tick_data(k.as_str()).await.unwrap();
+                while let Some(tick) = data.recv().await {
+                    println!("{:?}",tick);
+                }
+            });
+            sps.push(handler);
+        }
+        join_all(sps).await;
     }
 
 
