@@ -1,17 +1,17 @@
-use std::{fmt, time};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::CString;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use std::sync::{Arc, Once};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Once};
 use std::thread::sleep;
+use std::{fmt, time};
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use diesel::row::NamedRow;
-use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use futures_util::stream::SplitSink;
+use futures_util::{future, pin_mut, FutureExt, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use moka::future::Cache;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -22,11 +22,15 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::sync::OnceCell;
-use tokio_tungstenite::{
-    connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
-};
+use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::http;
+use tracing::{error, info};
+use tokio_tungstenite::{
+    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
+};
+use tokio_util::sync::CancellationToken;
+
 
 use crate::broker;
 use crate::broker::{Broker, Market, Order, OrderAction, OrderType, Position, Tick};
@@ -43,8 +47,6 @@ pub struct LsSecClient {
     tickers: Arc<OnceCell<HashMap<String, Market>>>,
     ws_sender: Arc<Mutex<Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>>,
     tick_channels: Arc<Mutex<HashMap<String, Sender<Tick>>>>,
-    position: Arc<OnceCell<Cache<String,Position>>>,
-    orders: Arc<Mutex<VecDeque<Order>>>,
 }
 
 impl Clone for LsSecClient {
@@ -59,8 +61,6 @@ impl Clone for LsSecClient {
             tickers: Arc::clone(&self.tickers),
             ws_sender: Arc::clone(&self.ws_sender),
             tick_channels: Arc::clone(&self.tick_channels),
-            position: self.position.clone(),
-            orders: Arc::clone(&self.orders)
         }
     }
 }
@@ -78,8 +78,6 @@ impl LsSecClient {
             tickers: Arc::new(OnceCell::new()),
             ws_sender: Arc::new(Mutex::new(None)),
             tick_channels: Arc::new(Mutex::new(HashMap::new())),
-            position: Arc::new(OnceCell::new()),
-            orders: Arc::new(Mutex::new(VecDeque::new()))
         }
     }
 
@@ -122,167 +120,104 @@ impl LsSecClient {
         Ok(tickers)
     }
 
-    pub async fn connection_trasaction(&self) -> Result<()> {
-        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:29443/websocket").await?;
-        let (mut write, mut read) = ws_stream.split();
-        let token = self.get_access_token().await?.clone();
-        write.send(Message::text(serde_json::json!({
-            "header": {
-                "token": token,
-                "tr_type": "1"
-            },
-            "body": {
-                "tr_cd": "SC0",
-                "tr_key": ""
-            }
-        }).to_string())).await?;
-        write.send(Message::text(serde_json::json!({
-            "header": {
-                "token": token,
-                "tr_type": "1"
-            },
-            "body": {
-                "tr_cd": "SC1",
-                "tr_key": ""
-            }
-        }).to_string())).await?;
-        write.send(Message::text(serde_json::json!({
-            "header": {
-                "token": token,
-                "tr_type": "1"
-            },
-            "body": {
-                "tr_cd": "SC2",
-                "tr_key": ""
-            }
-        }).to_string())).await?;
+    // pub async fn connection_trasaction(&self) -> Result<()> {
+    //     let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
+    //     let (mut write, mut read) = ws_stream.split();
+    //     let token = self.get_access_token().await?.clone();
+    //     write
+    //         .send(Message::text(
+    //             serde_json::json!({
+    //                 "header": {
+    //                     "token": token,
+    //                     "tr_type": "1"
+    //                 },
+    //                 "body": {
+    //                     "tr_cd": "SC0",
+    //                     "tr_key": ""
+    //                 }
+    //             })
+    //             .to_string(),
+    //         ))
+    //         .await?;
+    //     write
+    //         .send(Message::text(
+    //             serde_json::json!({
+    //                 "header": {
+    //                     "token": token,
+    //                     "tr_type": "1"
+    //                 },
+    //                 "body": {
+    //                     "tr_cd": "SC1",
+    //                     "tr_key": ""
+    //                 }
+    //             })
+    //             .to_string(),
+    //         ))
+    //         .await?;
+    //     write
+    //         .send(Message::text(
+    //             serde_json::json!({
+    //                 "header": {
+    //                     "token": token,
+    //                     "tr_type": "1"
+    //                 },
+    //                 "body": {
+    //                     "tr_cd": "SC2",
+    //                     "tr_key": ""
+    //                 }
+    //             })
+    //             .to_string(),
+    //         ))
+    //         .await?;
+    //
+    //     tokio::spawn(async move {
+    //         while let Some(message) = read.next().await {
+    //             if let Ok(message) = message {
+    //                 if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
+    //                     let trcd = json.get("header").and_then(|header| header.get("tr_cd"));
+    //
+    //                     if let Some(trcd) = trcd {
+    //                         match trcd.as_str() {
+    //                             Some(cd) => {
+    //                                 match cd {
+    //                                     "SC0" => {
+    //                                         println!("접수됨")
+    //                                     }
+    //                                     "SC1" => {
+    //                                         let orderNo = json
+    //                                             .get("body")
+    //                                             .and_then(|body| body.get("ordno"))
+    //                                             .and_then(|ordno| ordno.as_str())
+    //                                             .and_then(|s| s.parse::<i64>().ok());
+    //                                         {
+    //                                             let mut orders = orders.lock().await;
+    //                                             // find order index
+    //                                             let order = orders
+    //                                                 .iter()
+    //                                                 .position(|o| o.id == orderNo.unwrap());
+    //                                             match order {
+    //                                                 Some(o) => {
+    //                                                     orders.remove(o);
+    //                                                 }
+    //                                                 None => {}
+    //                                             }
+    //                                         }
+    //                                     }
+    //                                     "SC3" => {}
+    //                                     _ => {}
+    //                                 }
+    //                             }
+    //                             None => {}
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     });
+    //     Ok(())
+    // }
 
-        let orders = self.orders.clone();
-        tokio::spawn(async move {
-            while let Some(message) = read.next().await {
-                if let Ok(message) = message {
-                    if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
-
-                        let trcd = json.get("header").and_then(|header| {
-                            header.get("tr_cd")
-                        });
-
-                        if let Some(trcd) = trcd {
-                            match trcd.as_str() {
-                                Some(cd) => {
-                                    match cd{
-                                        "SC0" => {
-                                            println!("접수됨")
-                                        },
-                                        "SC1" => {
-                                            let orderNo = json.get("body")
-                                                .and_then(|body| body.get("ordno"))
-                                                .and_then(|ordno| ordno.as_str())
-                                                .and_then(|s| s.parse::<i64>().ok());
-                                            {
-                                                let mut orders = orders.lock().await;
-                                                // find order index
-                                                let order = orders.iter().position(|o| o.id == orderNo.unwrap());
-                                                match order {
-                                                    Some(o) => {
-                                                        orders.remove(o);
-                                                    },
-                                                    None => {}
-                                                }
-                                            }
-
-
-
-                                        },
-                                        "SC3" => {
-                                        },
-                                        _ => {}
-                                    }
-                                },
-                                None => {}
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        Ok(())
-    }
-
-
-    async fn connect_websocket(&self) -> Result<()> {
-        self.connection_trasaction().await?;
-        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
-        let (write, mut read) = ws_stream.split();
-        *self.ws_sender.lock().await = Some(write);
-
-        let tickermap = self.get_tickers().await?.clone();
-        let token = self.get_access_token().await?.clone();
-        let ws_sender = self.ws_sender.clone();
-        let channels = self.tick_channels.clone();
-
-        tokio::spawn(async move {
-            while let Some(message) = read.next().await {
-                if let Ok(message) = message {
-                    if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
-                        let data: Option<Tick> = json
-                            .get("body")
-                            .and_then(|body| serde_json::from_value(body.clone()).ok());
-
-                        match data {
-                            Some(tick) => {
-                                let mut channels = channels.lock().await;
-                                let ticker = tick.ticker.clone();
-                                if let Some(sender) = channels.get(&ticker) {
-                                    // check error channel close then remove from channels
-                                    if let Err(_) = sender.send(tick).await {
-                                        let tickers = tickermap
-                                            .get(&ticker)
-                                            .expect("error get ticker from map");
-
-                                        let data = serde_json::json!({
-                                            "header": {
-                                                "token": token,
-                                                "tr_type": "4"
-                                            },
-                                            "body": {
-                                                "tr_cd": || -> &'static str {
-                                            match tickers {
-                                                Market::KOSPI => "S3_",
-                                                Market::KOSDAQ => "K3_",
-                                            }
-                                        }(),
-                                                "tr_key": ticker
-                                            }
-                                        });
-                                        let mut writer = ws_sender.lock().await;
-                                        if let Some(writer) = writer.as_mut() {
-                                            let _ = writer.send(Message::text(data.to_string()));
-                                            channels.remove(&ticker);
-                                        }
-                                        drop(writer);
-                                    }
-                                }
-                                drop(channels);
-                            }
-                            None => {
-                                println!("{:?}", json);
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        Ok(())
-    }
-
-
-    async fn api_call(
-        &self,
-        path: &str,
-        tr_cd: &str,
-        body: &Value,
-    ) -> Result<Value> {
+    async fn api_call(&self, path: &str, tr_cd: &str, body: &Value) -> Result<Value> {
         let token = self.get_access_token().await?;
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("Authorization", format!("Bearer {}", token).parse()?);
@@ -303,7 +238,6 @@ impl LsSecClient {
 
 #[async_trait]
 impl Broker for LsSecClient {
-
     async fn get_tickers(&self) -> Result<HashMap<String, Market>> {
         let result = self.tickers.get_or_try_init(|| self.fetch_tickers()).await;
         result.cloned()
@@ -342,23 +276,56 @@ impl Broker for LsSecClient {
         Ok(token)
     }
 
-    async fn get_tick_data(&self, ticker: &str) -> Result<(Receiver<Tick>)> {
+    async fn connect_websocket(&self, token: CancellationToken) -> Result<Receiver<Tick>> {
+        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
+        let (write, mut read) = ws_stream.split();
+        *self.ws_sender.lock().await = Some(write);
+
+        let (tx,rx) = channel::<Tick>(100);
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = read.map(|msg| {
+                    if let Ok(message) = msg {
+                        if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
+                            if let Some(cd) = json.get("body").and_then(|body| {
+                                serde_json::from_value::<Tick>(body.clone()).ok()
+                            }) {
+                                return Some(cd)
+                            }
+                        }
+                    }
+                    None
+                }).for_each(|msg| async {
+                    match msg {
+                        Some(message) => {
+                            tx.send(message).await.unwrap();
+                        },
+                        None => {
+                            info!("does not tick data")
+                        }
+                    }
+
+                }) => {
+                    info!("stop receive websocket tick data")
+                }
+                _ = token.cancelled() => {
+                    info!("receive signal")
+                }
+            }
+        });
+        Ok(rx)
+    }
+
+    async fn get_tick_data(&self, ticker: &str) -> Result<()> {
         let mut channels = self.tick_channels.lock().await;
         if !channels.contains_key(ticker) {
-            let (tx, rx) = channel::<Tick>(100); // 버퍼 크기는 필요에 따라 조정
-            channels.insert(ticker.to_string(), tx);
             let mut sender = self.ws_sender.lock().await;
             if sender.is_none() {
-                drop(sender);
-                self.connect_websocket().await?;
-            } else {
-                drop(sender);
+                 return Err(anyhow::Error::msg("No websocket connection"));
             }
-
+            drop(sender);
             let tickermap = self.get_tickers().await?;
-
             let tickers = tickermap.get(ticker).context("invalid ticker")?;
-
             let data = serde_json::json!({
                 "header": {
                     "token": self.get_access_token().await?,
@@ -379,7 +346,7 @@ impl Broker for LsSecClient {
             if let Some(sender) = sender.as_mut() {
                 sender.send(Message::Text(data.to_string())).await?;
             }
-            Ok(rx)
+            Ok(())
         } else {
             return Err(anyhow::anyhow!("Already subscribed"));
         }
@@ -404,28 +371,6 @@ impl Broker for LsSecClient {
             .and_then(|block| block.get("MnyOrdAbleAmt"))
             .and_then(|amt| amt.as_i64())
             .context("Failed to get balance")
-    }
-
-    async fn get_position(&self,symbol: &str) -> Option<Position> {
-
-        let data: Result<&Cache<String, Position>> = self.position.get_or_try_init(|| async {
-            log::info!("init position cache");
-            let positions = self.get_positions().await?;
-            let cache = Cache::new(10_000);
-            for position in positions {
-                cache.insert(position.ticker.to_string(),position).await
-            }
-            Ok(cache)
-        }).await;
-
-        match data {
-            Ok(o) => {
-                o.get(symbol).await
-            },
-            Err(e) => {
-                None
-            }
-        }
     }
 
     async fn get_positions(&self) -> Result<Vec<Position>> {
@@ -455,7 +400,6 @@ impl Broker for LsSecClient {
             .collect::<Result<Vec<Position>, _>>()
             .context("Failed to deserialize positions")?;
 
-
         Ok(positions)
     }
 
@@ -480,23 +424,7 @@ impl Broker for LsSecClient {
         price: i64,
         order_action: OrderAction,
         order_type: OrderType,
-        force: bool
     ) -> Result<Order> {
-
-        let od = {
-            let orders = self.orders.lock().await;
-            orders.iter().find(|o| o.symbol == symbol).map(|o| o.clone())
-        };
-
-        match od {
-            Some(od) => {
-                if !force {
-                    return Ok(od.clone());
-                }
-            },
-            None => {}
-        }
-
         let body = serde_json::json!({
             "CSPAT00601InBlock1": {
                 "IsuNo": format!("A{}", symbol),
@@ -522,20 +450,22 @@ impl Broker for LsSecClient {
             .and_then(|ord_no| ord_no.as_i64())
             .context("Failed to get order number")?;
 
-        let order = Order::new(id,symbol.to_string(),amount,price,order_action,order_type);
-        let mut orders = self.orders.lock().await;
-        let od = order.clone();
-        orders.push_back(order);
-
-        log::info!("current orders {:?}",orders);
-        Ok(od)
+        let order = Order::new(
+            id,
+            symbol.to_string(),
+            amount,
+            price,
+            order_action,
+            order_type,
+        );
+        Ok(order)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use futures_util::future::join_all;
     use super::*;
+    use futures_util::future::join_all;
 
     static KEY: &str = "PSA0cTqjeDE2hoNUclL2tiHgOLLQwzdkX43e";
     static SECRET: &str = "H0jIqEYl6cqNGr7CyyfHfN2Ns1hPiRR7";
@@ -546,7 +476,6 @@ mod test {
         let token = client.get_access_token().await.unwrap();
         // let token = client.get_access_token().await.unwrap();
         println!("{:?}", token);
-
     }
 
     #[tokio::test]
@@ -556,8 +485,8 @@ mod test {
         let result = positions.iter().find(|p| p.ticker == "030520").take();
         match result {
             Some(p) => {
-                println!("{}",p.ticker)
-            },
+                println!("{}", p.ticker)
+            }
             None => {
                 println!("None!")
             }
@@ -568,7 +497,6 @@ mod test {
     async fn test_order() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
         let result = client.get_position("005949").await;
-
     }
 
     #[tokio::test]
@@ -592,8 +520,8 @@ mod test {
         let data = client.get_position("030520").await;
         match data {
             Some(d) => {
-                println!("{}",d.ticker)
-            },
+                println!("{}", d.ticker)
+            }
             None => {
                 println!("none")
             }
@@ -603,10 +531,12 @@ mod test {
     #[tokio::test]
     async fn test_limit_orders() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        client.connection_trasaction().await.unwrap();
         tokio::time::sleep(std::time::Duration::from_secs(2));
 
-        let result = client.order("092190",1,4200,OrderAction::Buy,OrderType::Limit,false).await.expect("error order");
+        let result = client
+            .order("092190", 1, 4200, OrderAction::Buy, OrderType::Limit)
+            .await
+            .expect("error order");
         tokio::time::sleep(time::Duration::from_secs(2));
         client.order_cancel(result).await.expect("error cancel");
         tokio::time::sleep(time::Duration::from_secs(2));
@@ -615,10 +545,12 @@ mod test {
     #[tokio::test]
     async fn test_market_order() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        client.connection_trasaction().await.unwrap();
         tokio::time::sleep(time::Duration::from_secs(2)).await;
 
-        let result = client.order("092190",1,0,OrderAction::Buy,OrderType::Market,false).await.expect("error order");
+        let result = client
+            .order("092190", 1, 0, OrderAction::Buy, OrderType::Market)
+            .await
+            .expect("error order");
         tokio::time::sleep(time::Duration::from_secs(2)).await;
         client.order_cancel(result).await.expect("error cancel");
         tokio::time::sleep(time::Duration::from_secs(2)).await;
@@ -629,23 +561,20 @@ mod test {
         let client = Arc::new(LsSecClient::new(KEY.to_string(), SECRET.to_string()));
 
         let result = client.get_tickers().await.unwrap();
-        let results = Arc::new(result);
+        let tk = CancellationToken::new();
+        let mut sockets = client.connect_websocket(tk).await.unwrap();
 
-        let mut sps = Vec::new();
-        for (k,v) in results.iter(){
-            let client = Arc::clone(&client);
-            let result = Arc::clone(&results);
-            let k = k.clone();
-            let handler = tokio::task::spawn(async move {
-                let mut data = client.get_tick_data(k.as_str()).await.unwrap();
-                while let Some(tick) = data.recv().await {
-                    println!("{:?}",tick);
-                }
-            });
-            sps.push(handler);
+        let subsclient = client.clone();
+        tokio::spawn(async move {
+            subsclient.get_tick_data("005930").await.unwrap()
+        });
+
+
+        while let Some(tick) = sockets.recv().await {
+            println!("{:?}", tick)
         }
-        join_all(sps).await;
+
+
+
     }
-
-
 }

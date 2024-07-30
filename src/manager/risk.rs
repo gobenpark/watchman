@@ -55,7 +55,8 @@ pub trait RiskManager: Send + Sync {
     async fn monitor_risk_indicators(&self) -> Result<RiskIndicators>;
 
     /// 리스크 완화 전략 제안
-    async fn suggest_mitigation(&self, risk_metrics: &RiskMetrics) -> Result<Vec<MitigationAction>>;
+    async fn suggest_mitigation(&self, risk_metrics: &RiskMetrics)
+        -> Result<Vec<MitigationAction>>;
 
     /// 최대 손실 한도 설정
     fn set_max_drawdown_limit(&self, limit: f64);

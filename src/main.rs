@@ -12,19 +12,18 @@ mod strategies;
 use anyhow::Result;
 use tokio::task::JoinHandle;
 // use tokio_stream::StreamExt;
-use tonic::codegen::tokio_stream;
-use tonic::{transport::Server, Request, Response, Status};
+use crate::broker::{Broker, OrderAction, OrderType};
+use dotenvy::dotenv;
 use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use manager::trading::TradingManager;
 use strategies::envelope::Envelope;
-use dotenvy::dotenv;
-use crate::broker::{Broker, OrderAction, OrderType};
 use tokio_tungstenite::{
-    connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
+    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
-use tracing::{info,error};
+use tonic::codegen::tokio_stream;
+use tonic::{transport::Server, Request, Response, Status};
+use tracing::{error, info};
 use tracing_subscriber;
-
 
 #[tokio::main]
 async fn main() -> Result<()> {

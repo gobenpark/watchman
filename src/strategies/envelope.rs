@@ -108,6 +108,9 @@ impl Strategy for Envelope {
 #[cfg(test)]
 mod test {
     use super::*;
+    use polars::prelude::*;
+    use polars_lazy::prelude::*;
+    use polars_sql::*;
     use std::env;
     #[test]
     fn test_envelope() {
@@ -121,5 +124,14 @@ mod test {
         println!("{}", env.get_targets().len());
         // let _ = env.evaluate_tick(&Tick::new("005930".to_string(), "100".to_string(), "100".to_string())).await?;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_polar() {
+        let df = df! {
+            "column_a" => &[1, 2, 3, 4, 5],
+            "column_b" => &[5, 4, 3, 2, 1]
+        }
+        .unwrap();
     }
 }
