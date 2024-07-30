@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::collections::HashMap;
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 // 예시 데이터 구조
 pub struct MarketData {
@@ -37,7 +37,6 @@ pub struct HistoricalData {
 //     async fn get_bulk_data(&self, symbols: &[&str]) -> Result<HashMap<String, MarketData>>;
 // }
 
-
 pub struct DataManager;
 
 impl DataManager {
@@ -50,17 +49,19 @@ impl DataManager {
 
 #[cfg(test)]
 mod test {
+    use spider::configuration::WaitForIdleNetwork;
     use spider::tokio;
     use spider::website::Website;
     use std::default::Default;
-    use tokio::time::Instant;
-    use spider::configuration::WaitForIdleNetwork;
     use std::time::Duration;
+    use tokio::time::Instant;
     #[tokio::test]
     async fn test_data() {
         let mut website: Website = Website::new("https://rsseau.fr")
             .with_chrome_intercept(true, true)
-            .with_wait_for_idle_network(Some(WaitForIdleNetwork::new(Some(Duration::from_secs(30)))))
+            .with_wait_for_idle_network(Some(WaitForIdleNetwork::new(Some(Duration::from_secs(
+                30,
+            )))))
             .with_caching(cfg!(feature = "cache"))
             .build()
             .unwrap();
@@ -87,11 +88,5 @@ mod test {
             duration,
             links.len()
         )
-
-
-
-
-
-
     }
 }

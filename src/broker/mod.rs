@@ -34,14 +34,13 @@ impl TryFrom<&str> for Market {
     }
 }
 
-#[derive(Copy)]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum OrderAction {
     Buy,
     Sell,
 }
 
-#[derive(Copy,Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum OrderType {
     Limit,
     Market,
@@ -69,7 +68,7 @@ impl OrderType {
 pub struct Order {
     id: i64,
     symbol: String,
-    quantity: i64 ,
+    quantity: i64,
     price: i64,
     action: OrderAction,
     order_type: OrderType,
@@ -95,7 +94,7 @@ impl Order {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tick {
     pub price: String,
     #[serde(rename = "cvolume")]
@@ -147,12 +146,12 @@ pub struct Position {
 #[async_trait]
 pub trait Broker: Send + Sync {
     async fn get_tickers(&self) -> Result<HashMap<String, Market>>;
-    async fn get_tick_data(&self, ticker: &str) -> Result<(Receiver<Tick>)>;
+    async fn get_tick_data(&self, ticker: &str) -> Result<()>;
     async fn get_balance(&self) -> Result<i64>;
     async fn get_positions(&self) -> Result<Vec<Position>>;
-    async fn get_position(&self, symbol: &str) -> Option<Position>;
     async fn order_cancel(&self, order: Order) -> Result<()>;
     async fn get_access_token(&self) -> Result<String>;
+    async fn connect_websocket(&self, token: tokio_util::sync::CancellationToken) -> Result<Receiver<Tick>>;
     async fn order(
         &self,
         ticker: &str,
@@ -160,6 +159,5 @@ pub trait Broker: Send + Sync {
         price: i64,
         order_action: OrderAction,
         order_type: OrderType,
-        force: bool
     ) -> Result<Order>;
 }

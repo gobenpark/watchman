@@ -1,12 +1,16 @@
-use std::collections::HashSet;
 use crate::broker;
 use crate::strategies::strategy_base::{OrderDecision, OrderType, Strategy};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::future::join_all;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use tokio::signal;
+use futures::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 
 #[async_trait]
 pub trait OrderExecutor: Send + Sync {
@@ -41,6 +45,15 @@ impl TradingManager {
     }
 
     pub async fn run(&self) -> Result<()> {
+        let cancel = CancellationToken::new();
+        let socket_cancel = cancel.clone();
+        let mut socket = self.client.connect_websocket(socket_cancel).await?;
+
+
+        let stream = ReceiverStream::new(socket);
+
+
+
         let strategy_tasks = self.strategies.iter().map(|strategy| {
             let strategy = Arc::clone(strategy);
             let client = Arc::clone(&self.client);
@@ -66,9 +79,7 @@ impl TradingManager {
         };
 
         let positons = client.get_positions().await?;
-        let ttargets: Vec<String> = positons.iter().map(|p| {
-            p.ticker.clone()
-        }).collect();
+        let ttargets: Vec<String> = positons.iter().map(|p| p.ticker.clone()).collect();
         targets.extend(ttargets);
         let new_symbols: HashSet<String> = targets.into_iter().collect();
         targets = new_symbols.into_iter().collect();
@@ -91,21 +102,20 @@ impl TradingManager {
         client: Arc<dyn broker::Broker>,
         target: String,
     ) -> Result<()> {
-        info!("Watching {}", target);
         let mut tick_data = client.get_tick_data(&target).await?;
 
-        while let Some(tick) = tick_data.recv().await {
-            let decision = {
-                let strategy = strategy.lock().await;
-                let p = client.get_position(tick.ticker.as_str()).await;
-                strategy
-                    .evaluate_tick(&tick, p)
-                    .await
-                    .context("Failed to evaluate tick")?
-            };
-            let client = client.clone();
-            self.execute_decision(&decision, client).await;
-        }
+        // while let Some(tick) = tick_data.recv().await {
+        //     let decision = {
+        //         let strategy = strategy.lock().await;
+        //         let p = client.get_position(tick.ticker.as_str()).await;
+        //         strategy
+        //             .evaluate_tick(&tick, p)
+        //             .await
+        //             .context("Failed to evaluate tick")?
+        //     };
+        //     let client = client.clone();
+        //     self.execute_decision(&decision, client).await;
+        // }
 
         Ok(())
     }
@@ -124,11 +134,10 @@ impl TradingManager {
                         decision.price as i64,
                         broker::OrderAction::Buy,
                         broker::OrderType::Market,
-                        false,
                     )
                     .await
                     .context("Failed to execute buy order")?;
-                log::info!("decision: {}",decision);
+                log::info!("decision: {}", decision);
                 // client.execute_buy(&decision.symbol, decision.quantity).await
                 //     .context("Failed to execute buy order")?;
             }
@@ -140,11 +149,10 @@ impl TradingManager {
                         decision.price as i64,
                         broker::OrderAction::Sell,
                         broker::OrderType::Market,
-                        true,
                     )
                     .await
                     .context("Failed to execute buy order")?;
-                log::info!("decision: {}",decision);
+                log::info!("decision: {}", decision);
             }
             OrderType::Hold => {}
         }
