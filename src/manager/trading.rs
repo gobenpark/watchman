@@ -11,6 +11,7 @@ use tracing::{error, info};
 use tokio::signal;
 use futures::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
+use crate::broker::Tick;
 
 #[async_trait]
 pub trait OrderExecutor: Send + Sync {
@@ -45,12 +46,25 @@ impl TradingManager {
     }
 
     pub async fn run(&self) -> Result<()> {
+        let l = self.strategies.len();
+        let (mut tx,mut rx) = tokio::sync::broadcast::channel::<Tick>(l);
         let cancel = CancellationToken::new();
         let socket_cancel = cancel.clone();
         let mut socket = self.client.connect_websocket(socket_cancel).await?;
 
+        tokio::spawn(async move {
+            while let Some(msg) = socket.recv().await {
+                tx.send(msg);
+            }
+        });
 
-        let stream = ReceiverStream::new(socket);
+
+
+        self.strategies.iter().map(|strategy| {
+            let strategy = Arc::clone(strategy);
+            let client = Arc::clone(&self.client);
+            self.run_strategy(strategy, client)
+        });
 
 
 
