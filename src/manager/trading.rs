@@ -58,12 +58,11 @@ impl TradingManager {
             }
         });
 
-
-
         self.strategies.iter().map(|strategy| {
+            let rrx = tx.subscribe();
             let strategy = Arc::clone(strategy);
             let client = Arc::clone(&self.client);
-            self.run_strategy(strategy, client)
+            self.run_strategy(strategy, client,rrx)
         });
 
 
@@ -86,6 +85,7 @@ impl TradingManager {
         &self,
         strategy: Arc<Mutex<Box<dyn Strategy>>>,
         client: Arc<dyn broker::Broker>,
+        receiver: tokio::sync::broadcast::Receiver<Tick>,
     ) -> Result<()> {
         let mut targets = {
             let strategy = strategy.lock().await;
