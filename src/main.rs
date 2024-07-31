@@ -1,14 +1,16 @@
 mod storage;
 
 use std::env;
+use std::sync::Arc;
 use std::thread::sleep;
 use teloxide::prelude::*;
 use tokio::signal;
 mod broker;
 mod manager;
-mod model;
 pub mod schema;
 mod strategies;
+mod position;
+
 use anyhow::Result;
 use tokio::task::JoinHandle;
 // use tokio_stream::StreamExt;
@@ -24,6 +26,8 @@ use tonic::codegen::tokio_stream;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{error, info};
 use tracing_subscriber;
+use crate::storage::postgres::PostgresStorage;
+use crate::position::position::PositionManager;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -34,7 +38,12 @@ async fn main() -> Result<()> {
     let key = env::var("LSSEC_KEY")?;
     let secret = env::var("LSSEC_SECRET")?;
     let client = broker::lssec::LsSecClient::new(key, secret);
-    let mut manager = TradingManager::new(client);
+    let pcli = Arc::new(client.clone());
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let storage = Arc::new(PostgresStorage::new(database_url));
+
+    let po = PositionManager::new(pcli,storage.clone());
+    let mut manager = TradingManager::new(client,po);
     let envelope = Envelope::new();
     manager.add_strategy(Box::new(envelope));
 

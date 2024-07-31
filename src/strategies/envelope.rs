@@ -31,6 +31,10 @@ impl Envelope {
 
 #[async_trait]
 impl Strategy for Envelope {
+    fn get_id(&self) -> String {
+        return "Envelope".to_string();
+    }
+
     fn get_targets(&self) -> Vec<String> {
         Python::with_gil(|py| -> PyResult<Vec<String>> {
             let instance = self.app.call0(py)?;

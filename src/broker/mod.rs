@@ -146,7 +146,7 @@ pub struct Position {
 #[async_trait]
 pub trait Broker: Send + Sync {
     async fn get_tickers(&self) -> Result<HashMap<String, Market>>;
-    async fn get_tick_data(&self, ticker: &str) -> Result<()>;
+    async fn subscribe(&self, ticker: &str) -> Result<()>;
     async fn get_balance(&self) -> Result<i64>;
     async fn get_positions(&self) -> Result<Vec<Position>>;
     async fn order_cancel(&self, order: Order) -> Result<()>;

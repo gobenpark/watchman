@@ -1,7 +1,7 @@
 -- Your SQL goes here
 create table sector
 (
-    id   varchar(20) primary key,
+    id   uuid NOT NULL default uuid_generate_v4() primary key,
     name varchar(200)
 );
 
