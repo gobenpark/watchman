@@ -9,9 +9,14 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tokio::signal;
-use futures::StreamExt;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::mpsc::channel;
+// use futures::{StreamExt};
+use tokio_stream::StreamExt;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+use tokio_util::io::StreamReader;
+use tonic::codegen::Body;
 use crate::broker::Tick;
+use crate::position::position::PositionManager;
 
 #[async_trait]
 pub trait OrderExecutor: Send + Sync {
@@ -22,13 +27,15 @@ pub trait OrderExecutor: Send + Sync {
 pub struct TradingManager {
     strategies: Vec<Arc<Mutex<Box<dyn Strategy>>>>,
     client: Arc<dyn broker::Broker>,
+    position_manager: PositionManager,
 }
 
 impl TradingManager {
-    pub fn new(client: impl broker::Broker + 'static) -> Self {
+    pub fn new(client: impl broker::Broker + 'static,position_manager: PositionManager) -> Self {
         Self {
             strategies: Vec::new(),
             client: Arc::new(client),
+            position_manager,
         }
     }
 
@@ -46,93 +53,64 @@ impl TradingManager {
     }
 
     pub async fn run(&self) -> Result<()> {
-        let l = self.strategies.len();
-        let (mut tx,mut rx) = tokio::sync::broadcast::channel::<Tick>(l);
+        let (mut tx,mut rx) = tokio::sync::broadcast::channel::<Tick>(100);
         let cancel = CancellationToken::new();
         let socket_cancel = cancel.clone();
         let mut socket = self.client.connect_websocket(socket_cancel).await?;
-
+        self.client.subscribe("005930").await?;
+        let (decision_tx, mut decision_rx) = channel(100);
+        let ttx = tx.clone();
         tokio::spawn(async move {
             while let Some(msg) = socket.recv().await {
-                tx.send(msg);
+                match ttx.send(msg) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Failed to send tick data: {}", e);
+                    }
+                }
             }
         });
 
-        self.strategies.iter().map(|strategy| {
-            let rrx = tx.subscribe();
-            let strategy = Arc::clone(strategy);
-            let client = Arc::clone(&self.client);
-            self.run_strategy(strategy, client,rrx)
-        });
+        for strategy in self.strategies.iter().cloned() {
+            let mut tick_rx = rx.resubscribe();
+            let decision_tx = decision_tx.clone();
+            let position_manager = self.position_manager.clone();
 
+            tokio::spawn(async move {
+                while let Ok(tick) = tick_rx.recv().await {
+                    let strategy = strategy.lock().await;
+                    let id = strategy.get_id();
+                    let positions = position_manager.get_positions()
+                        .expect("Failed to get positions")
+                        .into_iter()
+                        .filter(|p| p.strategy_id == id)
+                        .collect::<Vec<_>>();
 
+                    let decision = OrderDecision {
+                        order_type: OrderType::Hold,
+                        symbol: tick.ticker.clone(),
+                        quantity: 0,
+                        price: 0.0,
+                        reason: "".to_string(),
+                    };
+                    let _ = decision_tx.send((tick, decision)).await;
+                }
+            });
+        }
 
-        let strategy_tasks = self.strategies.iter().map(|strategy| {
-            let strategy = Arc::clone(strategy);
-            let client = Arc::clone(&self.client);
-            self.run_strategy(strategy, client)
-        });
-
-        join_all(strategy_tasks)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(())
-    }
-
-    async fn run_strategy(
-        &self,
-        strategy: Arc<Mutex<Box<dyn Strategy>>>,
-        client: Arc<dyn broker::Broker>,
-        receiver: tokio::sync::broadcast::Receiver<Tick>,
-    ) -> Result<()> {
-        let mut targets = {
-            let strategy = strategy.lock().await;
-            strategy.get_targets()
-        };
-
-        let positons = client.get_positions().await?;
-        let ttargets: Vec<String> = positons.iter().map(|p| p.ticker.clone()).collect();
-        targets.extend(ttargets);
-        let new_symbols: HashSet<String> = targets.into_iter().collect();
-        targets = new_symbols.into_iter().collect();
-
-        let target_tasks = targets
-            .into_iter()
-            .map(|target| self.watch_target(Arc::clone(&strategy), Arc::clone(&client), target));
-
-        join_all(target_tasks)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?;
+        tokio::select! {
+            _ = async {
+                while let Some((tick, decision)) = decision_rx.recv().await {
+                    println!("Tick: {:?}, Decision: {:?}", tick, decision);
+                    // 여기에서 결정에 따른 주문 실행 로직을 구현할 수 있습니다.
+                    // 예: self.client.place_order(decision).await;
+                }
+            } => {}
+        }
 
         Ok(())
     }
 
-    async fn watch_target(
-        &self,
-        strategy: Arc<Mutex<Box<dyn Strategy>>>,
-        client: Arc<dyn broker::Broker>,
-        target: String,
-    ) -> Result<()> {
-        let mut tick_data = client.get_tick_data(&target).await?;
-
-        // while let Some(tick) = tick_data.recv().await {
-        //     let decision = {
-        //         let strategy = strategy.lock().await;
-        //         let p = client.get_position(tick.ticker.as_str()).await;
-        //         strategy
-        //             .evaluate_tick(&tick, p)
-        //             .await
-        //             .context("Failed to evaluate tick")?
-        //     };
-        //     let client = client.clone();
-        //     self.execute_decision(&decision, client).await;
-        // }
-
-        Ok(())
-    }
 
     async fn execute_decision(
         &self,

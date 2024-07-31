@@ -26,11 +26,22 @@ diesel::table! {
 }
 
 diesel::table! {
+    charts (ticker, datetime) {
+        #[max_length = 10]
+        ticker -> Varchar,
+        open -> Nullable<Float8>,
+        high -> Nullable<Float8>,
+        low -> Nullable<Float8>,
+        close -> Nullable<Float8>,
+        volume -> Nullable<Int4>,
+        datetime -> Timestamp,
+    }
+}
+
+diesel::table! {
     interest (id) {
-        #[max_length = 20]
-        id -> Varchar,
-        #[max_length = 20]
-        sector_id -> Nullable<Varchar>,
+        id -> Uuid,
+        sector_id -> Nullable<Uuid>,
         #[max_length = 200]
         symbol -> Nullable<Varchar>,
     }
@@ -38,8 +49,7 @@ diesel::table! {
 
 diesel::table! {
     orders (id) {
-        #[max_length = 200]
-        id -> Varchar,
+        id -> Int4,
         price -> Nullable<Float8>,
         amount -> Nullable<Float8>,
         order_type -> Nullable<Int4>,
@@ -48,9 +58,21 @@ diesel::table! {
 }
 
 diesel::table! {
+    positions (id) {
+        id -> Uuid,
+        #[max_length = 10]
+        ticker -> Varchar,
+        price -> Float8,
+        amount -> Float8,
+        #[max_length = 10]
+        strategy_id -> Varchar,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     sector (id) {
-        #[max_length = 20]
-        id -> Varchar,
+        id -> Uuid,
         #[max_length = 200]
         name -> Nullable<Varchar>,
     }
@@ -58,4 +80,11 @@ diesel::table! {
 
 diesel::joinable!(interest -> sector (sector_id));
 
-diesel::allow_tables_to_appear_in_same_query!(articles, interest, orders, sector,);
+diesel::allow_tables_to_appear_in_same_query!(
+    articles,
+    charts,
+    interest,
+    orders,
+    positions,
+    sector,
+);

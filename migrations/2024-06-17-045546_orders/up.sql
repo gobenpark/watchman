@@ -1,7 +1,7 @@
 -- Your SQL goes here
-create table orders
+CREATE TABLE IF NOT EXISTS public.orders
 (
-    id         varchar(200)               not null
+    id         integer               not null
         primary key,
     price      double precision,
     amount     double precision,

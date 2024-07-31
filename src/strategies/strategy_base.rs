@@ -6,6 +6,7 @@ use std::fmt::Display;
 
 #[async_trait]
 pub trait Strategy: Send + Sync {
+    fn get_id(&self) -> String;
     fn get_targets(&self) -> Vec<String>;
     async fn evaluate_tick(
         &self,

@@ -316,7 +316,7 @@ impl Broker for LsSecClient {
         Ok(rx)
     }
 
-    async fn get_tick_data(&self, ticker: &str) -> Result<()> {
+    async fn subscribe(&self, ticker: &str) -> Result<()> {
         let mut channels = self.tick_channels.lock().await;
         if !channels.contains_key(ticker) {
             let mut sender = self.ws_sender.lock().await;
@@ -493,11 +493,6 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn test_order() {
-        let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        let result = client.get_position("005949").await;
-    }
 
     #[tokio::test]
     async fn test_get_balance() {
@@ -514,19 +509,6 @@ mod test {
         let map = client.get_tickers().await;
     }
 
-    #[tokio::test]
-    async fn test_websocket_connect() {
-        let mut client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
-        let data = client.get_position("030520").await;
-        match data {
-            Some(d) => {
-                println!("{}", d.ticker)
-            }
-            None => {
-                println!("none")
-            }
-        }
-    }
 
     #[tokio::test]
     async fn test_limit_orders() {
@@ -566,7 +548,7 @@ mod test {
 
         let subsclient = client.clone();
         tokio::spawn(async move {
-            subsclient.get_tick_data("005930").await.unwrap()
+            subsclient.subscribe("005930").await.unwrap()
         });
 
 
