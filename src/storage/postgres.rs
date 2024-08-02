@@ -1,10 +1,10 @@
-use diesel::{Insertable, PgConnection};
+use crate::position::Position;
+use crate::schema::positions;
+use crate::schema::positions::dsl::*;
+use anyhow::Result;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
-use crate::schema::positions::dsl::*;
-use crate::schema::positions;
-use crate::position::Position;
-use anyhow::Result;
+use diesel::{Insertable, PgConnection};
 
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 pub struct PostgresStorage {
@@ -20,7 +20,7 @@ impl PostgresStorage {
         Self { pool }
     }
 
-    pub fn add_position(&self, position: Position) -> Result<()>{
+    pub fn add_position(&self, position: Position) -> Result<()> {
         let con = &mut self.pool.get()?;
         diesel::insert_into(positions::table)
             .values(&position)
@@ -32,7 +32,8 @@ impl PostgresStorage {
         let con = &mut self.pool.get()?;
         let po = positions
             .select(Position::as_select())
-            .filter(ticker.eq(symbol)).load(con)?;
+            .filter(ticker.eq(symbol))
+            .load(con)?;
         Ok(po)
     }
 
@@ -42,7 +43,6 @@ impl PostgresStorage {
         Ok(po)
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -68,7 +68,8 @@ mod test {
             amount: 1.0,
             strategy_id: "test".to_string(),
             created_at: chrono::Utc::now().naive_utc(),
-        }).expect("Failed to add position");
+        })
+        .expect("Failed to add position");
     }
 
     #[test]
@@ -77,7 +78,7 @@ mod test {
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let po = PostgresStorage::new(database_url);
         let result = po.get_position("AAPL".to_string()).expect("");
-        println!("{:?}",result);
+        println!("{:?}", result);
     }
 
     #[test]
@@ -86,6 +87,6 @@ mod test {
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let po = PostgresStorage::new(database_url);
         let result = po.get_positions().expect("");
-        println!("{:?}",result);
+        println!("{:?}", result);
     }
 }

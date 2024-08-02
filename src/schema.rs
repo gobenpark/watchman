@@ -81,10 +81,5 @@ diesel::table! {
 diesel::joinable!(interest -> sector (sector_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    articles,
-    charts,
-    interest,
-    orders,
-    positions,
-    sector,
+    articles, charts, interest, orders, positions, sector,
 );

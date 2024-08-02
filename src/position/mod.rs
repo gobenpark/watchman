@@ -3,8 +3,7 @@ use uuid::Uuid;
 
 pub mod position;
 
-
-#[derive(Insertable, Selectable, Queryable,Debug)]
+#[derive(Insertable, Selectable, Queryable, Debug)]
 #[diesel(table_name = crate::schema::positions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Position {
