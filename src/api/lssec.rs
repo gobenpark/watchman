@@ -30,11 +30,12 @@ use tokio_tungstenite::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-
+use crate::api::market::{MarketAPI, OrderResult,OrderResultType};
 use crate::broker;
 use crate::broker::{
-    Broker, Market, Order, OrderAction, OrderResult, OrderResultType, OrderType, Position, Tick,
+     Market, Order, OrderAction, OrderType, Position, Tick,
 };
+
 
 static INIT: Once = Once::new();
 
@@ -142,7 +143,7 @@ impl LsSecClient {
 }
 
 #[async_trait]
-impl Broker for LsSecClient {
+impl MarketAPI for LsSecClient {
     async fn get_tickers(&self) -> Result<HashMap<String, Market>> {
         let result = self.tickers.get_or_try_init(|| self.fetch_tickers()).await;
         result.cloned()

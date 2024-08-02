@@ -10,6 +10,7 @@ mod manager;
 mod position;
 pub mod schema;
 mod strategies;
+mod api;
 
 use anyhow::Result;
 use tokio::task::JoinHandle;
@@ -37,7 +38,7 @@ async fn main() -> Result<()> {
 
     let key = env::var("LSSEC_KEY")?;
     let secret = env::var("LSSEC_SECRET")?;
-    let client = broker::lssec::LsSecClient::new(key, secret);
+    let client = api::lssec::LsSecClient::new(key, secret);
     let pcli = Arc::new(client.clone());
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let storage = Arc::new(PostgresStorage::new(database_url));

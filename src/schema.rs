@@ -39,6 +39,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    daily_cap (ticker) {
+        #[max_length = 10]
+        ticker -> Varchar,
+        market_cap -> Nullable<Int8>,
+        trading_volume -> Nullable<Int8>,
+        change -> Nullable<Numeric>,
+        datetime -> Timestamp,
+    }
+}
+
+diesel::table! {
     interest (id) {
         id -> Uuid,
         sector_id -> Nullable<Uuid>,
@@ -78,8 +89,28 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    trading_volume (ticker, datetime) {
+        #[max_length = 10]
+        ticker -> Varchar,
+        inst_sum -> Nullable<Numeric>,
+        etc_corp -> Nullable<Int4>,
+        individual -> Nullable<Int4>,
+        foreigner -> Nullable<Int4>,
+        total -> Nullable<Int4>,
+        datetime -> Timestamp,
+    }
+}
+
 diesel::joinable!(interest -> sector (sector_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    articles, charts, interest, orders, positions, sector,
+    articles,
+    charts,
+    daily_cap,
+    interest,
+    orders,
+    positions,
+    sector,
+    trading_volume,
 );

@@ -1,4 +1,4 @@
-pub mod lssec;
+pub mod broker;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -64,26 +64,6 @@ impl OrderType {
             OrderType::Market => "03",
         }
     }
-}
-
-#[derive(Debug)]
-pub enum OrderResultType {
-    //접수
-    Wait,
-    //성공
-    Success,
-    //취소
-    Cancel,
-    //정정
-    Edit,
-    //거부
-    Denied,
-}
-
-#[derive(Debug)]
-pub struct OrderResult {
-    id: String,
-    result: OrderResultType,
 }
 
 #[derive(Clone, Debug)]
@@ -163,30 +143,4 @@ pub struct Position {
     fee: f64,
     #[serde(rename = "tax")]
     tax: f64,
-}
-
-#[async_trait]
-pub trait Broker: Send + Sync {
-    async fn get_tickers(&self) -> Result<HashMap<String, Market>>;
-    async fn subscribe(&self, ticker: &str) -> Result<()>;
-    async fn get_balance(&self) -> Result<i64>;
-    async fn get_positions(&self) -> Result<Vec<Position>>;
-    async fn order_cancel(&self, order: Order) -> Result<()>;
-    async fn get_access_token(&self) -> Result<String>;
-    async fn connect_websocket(
-        &self,
-        token: tokio_util::sync::CancellationToken,
-    ) -> Result<Receiver<Tick>>;
-    async fn order(
-        &self,
-        ticker: &str,
-        amount: i64,
-        price: i64,
-        order_action: OrderAction,
-        order_type: OrderType,
-    ) -> Result<Order>;
-    async fn connect_websocket_order_transaction(
-        &self,
-        token: CancellationToken,
-    ) -> Result<Receiver<OrderResult>>;
 }

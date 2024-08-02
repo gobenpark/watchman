@@ -26,15 +26,15 @@ pub trait OrderExecutor: Send + Sync {
 
 pub struct TradingManager {
     strategies: Vec<Arc<Mutex<Box<dyn Strategy>>>>,
-    client: Arc<dyn broker::Broker>,
+    client: Arc<broker::broker::Broker>,
     position_manager: PositionManager,
 }
 
 impl TradingManager {
-    pub fn new(client: impl broker::Broker + 'static, position_manager: PositionManager) -> Self {
+    pub fn new(client: Arc<broker::broker::Broker>, position_manager: PositionManager) -> Self {
         Self {
             strategies: Vec::new(),
-            client: Arc::new(client),
+            client: client,
             position_manager,
         }
     }
@@ -56,6 +56,9 @@ impl TradingManager {
         let (mut tx, mut rx) = tokio::sync::broadcast::channel::<Tick>(100);
         let cancel = CancellationToken::new();
         let socket_cancel = cancel.clone();
+
+
+
         let mut socket = self.client.connect_websocket(socket_cancel).await?;
         for ticker in &["005930", "005935", "103590"] {
             self.client.subscribe(ticker).await?;
