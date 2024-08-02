@@ -1,6 +1,6 @@
+mod analyzer;
 mod models;
 pub mod postgres;
-mod analyzer;
 
 #[cfg(test)]
 mod test {
@@ -9,5 +9,3 @@ mod test {
         println!("test")
     }
 }
-
-

@@ -25,15 +25,16 @@ use tokio::sync::OnceCell;
 use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::http;
-use tracing::{error, info};
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
 use tokio_util::sync::CancellationToken;
-
+use tracing::{error, info};
 
 use crate::broker;
-use crate::broker::{Broker, Market, Order, OrderAction, OrderType, Position, Tick};
+use crate::broker::{
+    Broker, Market, Order, OrderAction, OrderResult, OrderResultType, OrderType, Position, Tick,
+};
 
 static INIT: Once = Once::new();
 
@@ -120,102 +121,6 @@ impl LsSecClient {
         Ok(tickers)
     }
 
-    // pub async fn connection_trasaction(&self) -> Result<()> {
-    //     let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
-    //     let (mut write, mut read) = ws_stream.split();
-    //     let token = self.get_access_token().await?.clone();
-    //     write
-    //         .send(Message::text(
-    //             serde_json::json!({
-    //                 "header": {
-    //                     "token": token,
-    //                     "tr_type": "1"
-    //                 },
-    //                 "body": {
-    //                     "tr_cd": "SC0",
-    //                     "tr_key": ""
-    //                 }
-    //             })
-    //             .to_string(),
-    //         ))
-    //         .await?;
-    //     write
-    //         .send(Message::text(
-    //             serde_json::json!({
-    //                 "header": {
-    //                     "token": token,
-    //                     "tr_type": "1"
-    //                 },
-    //                 "body": {
-    //                     "tr_cd": "SC1",
-    //                     "tr_key": ""
-    //                 }
-    //             })
-    //             .to_string(),
-    //         ))
-    //         .await?;
-    //     write
-    //         .send(Message::text(
-    //             serde_json::json!({
-    //                 "header": {
-    //                     "token": token,
-    //                     "tr_type": "1"
-    //                 },
-    //                 "body": {
-    //                     "tr_cd": "SC2",
-    //                     "tr_key": ""
-    //                 }
-    //             })
-    //             .to_string(),
-    //         ))
-    //         .await?;
-    //
-    //     tokio::spawn(async move {
-    //         while let Some(message) = read.next().await {
-    //             if let Ok(message) = message {
-    //                 if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
-    //                     let trcd = json.get("header").and_then(|header| header.get("tr_cd"));
-    //
-    //                     if let Some(trcd) = trcd {
-    //                         match trcd.as_str() {
-    //                             Some(cd) => {
-    //                                 match cd {
-    //                                     "SC0" => {
-    //                                         println!("접수됨")
-    //                                     }
-    //                                     "SC1" => {
-    //                                         let orderNo = json
-    //                                             .get("body")
-    //                                             .and_then(|body| body.get("ordno"))
-    //                                             .and_then(|ordno| ordno.as_str())
-    //                                             .and_then(|s| s.parse::<i64>().ok());
-    //                                         {
-    //                                             let mut orders = orders.lock().await;
-    //                                             // find order index
-    //                                             let order = orders
-    //                                                 .iter()
-    //                                                 .position(|o| o.id == orderNo.unwrap());
-    //                                             match order {
-    //                                                 Some(o) => {
-    //                                                     orders.remove(o);
-    //                                                 }
-    //                                                 None => {}
-    //                                             }
-    //                                         }
-    //                                     }
-    //                                     "SC3" => {}
-    //                                     _ => {}
-    //                                 }
-    //                             }
-    //                             None => {}
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     });
-    //     Ok(())
-    // }
 
     async fn api_call(&self, path: &str, tr_cd: &str, body: &Value) -> Result<Value> {
         let token = self.get_access_token().await?;
@@ -276,12 +181,103 @@ impl Broker for LsSecClient {
         Ok(token)
     }
 
+    async fn connect_websocket_order_transaction(
+        &self,
+        token: CancellationToken,
+    ) -> Result<Receiver<OrderResult>> {
+        let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
+        let (mut write, mut read) = ws_stream.split();
+
+        for i in &["SC0", "SC1", "SC2", "SC3", "SC4"] {
+            write
+                .send(Message::text(
+                    serde_json::json!({
+                        "header": {
+                            "token": self.get_access_token().await?,
+                            "tr_type": "1"
+                        },
+                        "body": {
+                            "tr_cd": i,
+                            "tr_key": ""
+                        }
+                    })
+                        .to_string(),
+                ))
+                .await?;
+        }
+        let (tx, rx) = channel::<OrderResult>(100);
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = read.map(|msg| {
+                    if let Ok(message) = msg {
+                        if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
+                        if let Some(trcd) = json.get("header").and_then(|header| header.get("tr_cd")) {
+                         let orderNo = json
+                            .get("body")
+                            .and_then(|body| body.get("ordno"))
+                            .and_then(|ordno| ordno.as_str())
+                            .and_then(|s| Some(s.to_string()));
+                            match trcd.as_str() {
+                                Some("SC0") => {
+                                        if let Some(orderNo) = orderNo {
+                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Wait })
+                                        }
+                                },
+                                Some("SC1") => {
+                                        if let Some(orderNo) = orderNo {
+                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Success })
+                                        }
+                                },
+                                Some("SC2") => {
+                                        if let Some(orderNo) = orderNo {
+                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Edit })
+                                        }
+                                },
+                                Some("SC3") => {
+                                        if let Some(orderNo) = orderNo {
+                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Cancel })
+                                        }
+                                },
+                                Some("SC4") => {
+                                    if let Some(orderNo) = orderNo {
+                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Denied })
+                                        }
+                                }
+                                _ => {
+                                        println!("none")
+                                    }
+                            }
+                                }
+                        }
+                    }
+                    None
+                }).for_each(|msg| async {
+                    match msg {
+                        Some(message) => {
+                            tx.send(message).await.unwrap();
+                        },
+                        None => {
+                            info!("does not tick data")
+                        }
+                    }
+
+                }) => {
+                    info!("stop receive websocket tick data")
+                }
+                _ = token.cancelled() => {
+                    info!("receive signal")
+                }
+            }
+        });
+        Ok(rx)
+    }
+
     async fn connect_websocket(&self, token: CancellationToken) -> Result<Receiver<Tick>> {
         let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
         let (write, mut read) = ws_stream.split();
         *self.ws_sender.lock().await = Some(write);
 
-        let (tx,rx) = channel::<Tick>(100);
+        let (tx, rx) = channel::<Tick>(100);
         tokio::spawn(async move {
             tokio::select! {
                 _ = read.map(|msg| {
@@ -321,7 +317,7 @@ impl Broker for LsSecClient {
         if !channels.contains_key(ticker) {
             let mut sender = self.ws_sender.lock().await;
             if sender.is_none() {
-                 return Err(anyhow::Error::msg("No websocket connection"));
+                return Err(anyhow::Error::msg("No websocket connection"));
             }
             drop(sender);
             let tickermap = self.get_tickers().await?;
@@ -493,7 +489,6 @@ mod test {
         }
     }
 
-
     #[tokio::test]
     async fn test_get_balance() {
         let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
@@ -508,7 +503,6 @@ mod test {
         let map = client.get_tickers().await;
         let map = client.get_tickers().await;
     }
-
 
     #[tokio::test]
     async fn test_limit_orders() {
@@ -547,16 +541,22 @@ mod test {
         let mut sockets = client.connect_websocket(tk).await.unwrap();
 
         let subsclient = client.clone();
-        tokio::spawn(async move {
-            subsclient.subscribe("005930").await.unwrap()
-        });
-
+        tokio::spawn(async move { subsclient.subscribe("005930").await.unwrap() });
 
         while let Some(tick) = sockets.recv().await {
             println!("{:?}", tick)
         }
+    }
 
+    #[tokio::test]
+    async fn test_sample() {
+        let client = Arc::new(LsSecClient::new(KEY.to_string(), SECRET.to_string()));
 
-
+        let tk = CancellationToken::new();
+        if let Ok(mut rx) = client.connect_websocket_order_transaction(tk).await {
+            while let Some(i)  = rx.recv().await {
+                println!("{:?}",i)
+            }
+        }
     }
 }

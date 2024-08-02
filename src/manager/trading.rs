@@ -5,18 +5,18 @@ use async_trait::async_trait;
 use futures::future::join_all;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::signal;
+use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use tokio::signal;
-use tokio::sync::mpsc::channel;
 // use futures::{StreamExt};
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
-use tokio_util::io::StreamReader;
-use tonic::codegen::Body;
 use crate::broker::Tick;
 use crate::position::position::PositionManager;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+use tokio_stream::StreamExt;
+use tokio_util::io::StreamReader;
+use tonic::codegen::Body;
 
 #[async_trait]
 pub trait OrderExecutor: Send + Sync {
@@ -31,7 +31,7 @@ pub struct TradingManager {
 }
 
 impl TradingManager {
-    pub fn new(client: impl broker::Broker + 'static,position_manager: PositionManager) -> Self {
+    pub fn new(client: impl broker::Broker + 'static, position_manager: PositionManager) -> Self {
         Self {
             strategies: Vec::new(),
             client: Arc::new(client),
@@ -53,11 +53,13 @@ impl TradingManager {
     }
 
     pub async fn run(&self) -> Result<()> {
-        let (mut tx,mut rx) = tokio::sync::broadcast::channel::<Tick>(100);
+        let (mut tx, mut rx) = tokio::sync::broadcast::channel::<Tick>(100);
         let cancel = CancellationToken::new();
         let socket_cancel = cancel.clone();
         let mut socket = self.client.connect_websocket(socket_cancel).await?;
-        self.client.subscribe("005930").await?;
+        for ticker in &["005930", "005935", "103590"] {
+            self.client.subscribe(ticker).await?;
+        }
         let (decision_tx, mut decision_rx) = channel(100);
         let ttx = tx.clone();
         tokio::spawn(async move {
@@ -80,7 +82,9 @@ impl TradingManager {
                 while let Ok(tick) = tick_rx.recv().await {
                     let strategy = strategy.lock().await;
                     let id = strategy.get_id();
-                    let positions = position_manager.get_positions()
+
+                    let positions = position_manager
+                        .get_positions()
                         .expect("Failed to get positions")
                         .into_iter()
                         .filter(|p| p.strategy_id == id)
@@ -91,7 +95,7 @@ impl TradingManager {
                         symbol: tick.ticker.clone(),
                         quantity: 0,
                         price: 0.0,
-                        reason: "".to_string(),
+                        reason: format!("strategy id: {}, tick: {:?}", id, tick),
                     };
                     let _ = decision_tx.send((tick, decision)).await;
                 }
@@ -102,15 +106,12 @@ impl TradingManager {
             _ = async {
                 while let Some((tick, decision)) = decision_rx.recv().await {
                     println!("Tick: {:?}, Decision: {:?}", tick, decision);
-                    // 여기에서 결정에 따른 주문 실행 로직을 구현할 수 있습니다.
-                    // 예: self.client.place_order(decision).await;
                 }
             } => {}
         }
 
         Ok(())
     }
-
 
     async fn execute_decision(
         &self,

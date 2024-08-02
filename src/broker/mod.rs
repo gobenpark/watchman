@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use tokio::sync::mpsc::Receiver;
+use tokio_util::sync::CancellationToken;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Market {
     KOSPI,
@@ -62,6 +64,26 @@ impl OrderType {
             OrderType::Market => "03",
         }
     }
+}
+
+#[derive(Debug)]
+pub enum OrderResultType {
+    //접수
+    Wait,
+    //성공
+    Success,
+    //취소
+    Cancel,
+    //정정
+    Edit,
+    //거부
+    Denied,
+}
+
+#[derive(Debug)]
+pub struct OrderResult {
+    id: String,
+    result: OrderResultType,
 }
 
 #[derive(Clone, Debug)]
@@ -151,7 +173,10 @@ pub trait Broker: Send + Sync {
     async fn get_positions(&self) -> Result<Vec<Position>>;
     async fn order_cancel(&self, order: Order) -> Result<()>;
     async fn get_access_token(&self) -> Result<String>;
-    async fn connect_websocket(&self, token: tokio_util::sync::CancellationToken) -> Result<Receiver<Tick>>;
+    async fn connect_websocket(
+        &self,
+        token: tokio_util::sync::CancellationToken,
+    ) -> Result<Receiver<Tick>>;
     async fn order(
         &self,
         ticker: &str,
@@ -160,4 +185,8 @@ pub trait Broker: Send + Sync {
         order_action: OrderAction,
         order_type: OrderType,
     ) -> Result<Order>;
+    async fn connect_websocket_order_transaction(
+        &self,
+        token: CancellationToken,
+    ) -> Result<Receiver<OrderResult>>;
 }

@@ -1,23 +1,23 @@
-use std::sync::Arc;
 use crate::broker;
 use crate::broker::Broker;
-use crate::storage::postgres::PostgresStorage;
 use crate::position::Position;
+use crate::storage::postgres::PostgresStorage;
 use anyhow::Result;
+use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct PositionManager  {
+pub struct PositionManager {
     client: Arc<dyn Broker>,
     positions: Vec<broker::Position>,
-    storage: Arc<PostgresStorage>
+    storage: Arc<PostgresStorage>,
 }
 
 impl PositionManager {
-    pub fn new(client: Arc<dyn Broker>,storage: Arc<PostgresStorage>) -> Self {
+    pub fn new(client: Arc<dyn Broker>, storage: Arc<PostgresStorage>) -> Self {
         Self {
             client,
             positions: Vec::new(),
-            storage
+            storage,
         }
     }
 
