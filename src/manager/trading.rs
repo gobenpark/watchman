@@ -11,8 +11,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 // use futures::{StreamExt};
-use crate::broker::Tick;
-use crate::position::position::PositionManager;
+use crate::model::tick::Tick;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tokio_stream::StreamExt;
 use tokio_util::io::StreamReader;
@@ -26,16 +25,14 @@ pub trait OrderExecutor: Send + Sync {
 
 pub struct TradingManager {
     strategies: Vec<Arc<Mutex<Box<dyn Strategy>>>>,
-    client: Arc<broker::broker::Broker>,
-    position_manager: PositionManager,
+    broker: Arc<broker::Broker>,
 }
 
 impl TradingManager {
-    pub fn new(client: Arc<broker::broker::Broker>, position_manager: PositionManager) -> Self {
+    pub fn new(client: Arc<broker::Broker>) -> Self {
         Self {
             strategies: Vec::new(),
             client: client,
-            position_manager,
         }
     }
 
@@ -58,8 +55,7 @@ impl TradingManager {
         let socket_cancel = cancel.clone();
 
 
-
-        let mut socket = self.client.connect_websocket(socket_cancel).await?;
+        let mut socket = self.broker.transaction(socket_cancel).await?;
         for ticker in &["005930", "005935", "103590"] {
             self.client.subscribe(ticker).await?;
         }
@@ -79,19 +75,18 @@ impl TradingManager {
         for strategy in self.strategies.iter().cloned() {
             let mut tick_rx = rx.resubscribe();
             let decision_tx = decision_tx.clone();
-            let position_manager = self.position_manager.clone();
 
             tokio::spawn(async move {
                 while let Ok(tick) = tick_rx.recv().await {
                     let strategy = strategy.lock().await;
                     let id = strategy.get_id();
 
-                    let positions = position_manager
-                        .get_positions()
-                        .expect("Failed to get positions")
-                        .into_iter()
-                        .filter(|p| p.strategy_id == id)
-                        .collect::<Vec<_>>();
+                    // let positions = position_manager
+                    //     .get_positions()
+                    //     .expect("Failed to get positions")
+                    //     .into_iter()
+                    //     .filter(|p| p.strategy_id == id)
+                    //     .collect::<Vec<_>>();
 
                     let decision = OrderDecision {
                         order_type: OrderType::Hold,
@@ -115,44 +110,44 @@ impl TradingManager {
 
         Ok(())
     }
-
-    async fn execute_decision(
-        &self,
-        decision: &OrderDecision,
-        client: Arc<dyn broker::Broker>,
-    ) -> Result<()> {
-        match decision.order_type {
-            OrderType::Buy => {
-                client
-                    .order(
-                        &decision.symbol,
-                        1,
-                        decision.price as i64,
-                        broker::OrderAction::Buy,
-                        broker::OrderType::Market,
-                    )
-                    .await
-                    .context("Failed to execute buy order")?;
-                log::info!("decision: {}", decision);
-                // client.execute_buy(&decision.symbol, decision.quantity).await
-                //     .context("Failed to execute buy order")?;
-            }
-            OrderType::Sell => {
-                client
-                    .order(
-                        &decision.symbol,
-                        1,
-                        decision.price as i64,
-                        broker::OrderAction::Sell,
-                        broker::OrderType::Market,
-                    )
-                    .await
-                    .context("Failed to execute buy order")?;
-                log::info!("decision: {}", decision);
-            }
-            OrderType::Hold => {}
-        }
-
-        Ok(())
-    }
+    //
+    // async fn execute_decision(
+    //     &self,
+    //     decision: &OrderDecision,
+    //     client: Arc<dyn broker::Broker>,
+    // ) -> Result<()> {
+    //     match decision.order_type {
+    //         OrderType::Buy => {
+    //             client
+    //                 .order(
+    //                     &decision.symbol,
+    //                     1,
+    //                     decision.price as i64,
+    //                     broker::OrderAction::Buy,
+    //                     broker::OrderType::Market,
+    //                 )
+    //                 .await
+    //                 .context("Failed to execute buy order")?;
+    //             log::info!("decision: {}", decision);
+    //             // client.execute_buy(&decision.symbol, decision.quantity).await
+    //             //     .context("Failed to execute buy order")?;
+    //         }
+    //         OrderType::Sell => {
+    //             client
+    //                 .order(
+    //                     &decision.symbol,
+    //                     1,
+    //                     decision.price as i64,
+    //                     broker::OrderAction::Sell,
+    //                     broker::OrderType::Market,
+    //                 )
+    //                 .await
+    //                 .context("Failed to execute buy order")?;
+    //             log::info!("decision: {}", decision);
+    //         }
+    //         OrderType::Hold => {}
+    //     }
+    //
+    //     Ok(())
+    // }
 }

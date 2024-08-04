@@ -62,9 +62,11 @@ diesel::table! {
     orders (id) {
         id -> Int4,
         price -> Nullable<Float8>,
-        amount -> Nullable<Float8>,
+        quantity -> Nullable<Float8>,
         order_type -> Nullable<Int4>,
         created_at -> Timestamp,
+        #[max_length = 10]
+        ticker -> Nullable<Varchar>,
     }
 }
 
@@ -74,7 +76,7 @@ diesel::table! {
         #[max_length = 10]
         ticker -> Varchar,
         price -> Float8,
-        amount -> Float8,
+        quantity -> Float8,
         #[max_length = 10]
         strategy_id -> Varchar,
         created_at -> Timestamp,

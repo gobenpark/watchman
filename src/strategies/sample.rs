@@ -1,5 +1,6 @@
-use crate::broker::{Position, Tick};
 use crate::strategies::strategy_base::{OrderDecision, Strategy};
+use crate::model::position::Position;
+use crate::model::tick::Tick;
 use async_trait::async_trait;
 
 pub struct SampleStrategy {}

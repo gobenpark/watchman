@@ -5,7 +5,7 @@ create table if not exists public.positions
         primary key,
     ticker      varchar(10)                     not null,
     price       double precision                not null,
-    amount      double precision                not null,
+    quantity      double precision                not null,
     strategy_id varchar(10)                     not null,
     created_at  timestamp                       not null
 );

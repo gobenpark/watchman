@@ -7,16 +7,15 @@ use teloxide::prelude::*;
 use tokio::signal;
 mod broker;
 mod manager;
-mod position;
 pub mod schema;
 mod strategies;
 mod api;
+mod model;
 
 use anyhow::Result;
 use tokio::task::JoinHandle;
 // use tokio_stream::StreamExt;
-use crate::broker::{Broker, OrderAction, OrderType};
-use crate::position::position::PositionManager;
+use crate::broker::{Broker};
 use crate::storage::postgres::PostgresStorage;
 use dotenvy::dotenv;
 use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
@@ -41,10 +40,9 @@ async fn main() -> Result<()> {
     let client = api::lssec::LsSecClient::new(key, secret);
     let pcli = Arc::new(client.clone());
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let storage = Arc::new(PostgresStorage::new(database_url));
 
-    let po = PositionManager::new(pcli, storage.clone());
-    let mut manager = TradingManager::new(client, po);
+    let broker = Arc::new(Broker::new(Box::new(client), database_url));
+    let mut manager = TradingManager::new(broker);
     let envelope = Envelope::new();
     let sample = strategies::sample::SampleStrategy::new();
     manager.add_strategy(Box::new(envelope));

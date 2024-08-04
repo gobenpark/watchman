@@ -1,4 +1,4 @@
-use crate::position::Position;
+use crate::model::position::Position;
 use crate::schema::positions;
 use crate::schema::positions::dsl::*;
 use anyhow::Result;
@@ -47,8 +47,7 @@ impl PostgresStorage {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::schema::orders::dsl::*;
-    use crate::storage::models::Order;
+    use crate::model::order::Order;
     use diesel::pg::PgConnection;
     use diesel::prelude::*;
     use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
@@ -61,14 +60,8 @@ mod test {
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let po = PostgresStorage::new(database_url);
-        po.add_position(Position {
-            id: uuid::Uuid::new_v4(),
-            ticker: "AAPL".to_string(),
-            price: 1.0,
-            amount: 1.0,
-            strategy_id: "test".to_string(),
-            created_at: chrono::Utc::now().naive_utc(),
-        })
+
+        po.add_position(Position::default())
         .expect("Failed to add position");
     }
 

@@ -1,146 +1,125 @@
-pub mod broker;
+use std::fmt::Display;
 
 use anyhow::Result;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use tokio::sync::mpsc::Receiver;
+use chrono::Duration;
+use diesel::{Insertable, PgConnection};
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use moka::future::Cache;
+use teloxide::payloads::SetStickerPositionInSetSetters;
+use tokio::select;
+use tokio::sync::mpsc::{channel, Receiver};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Market {
-    KOSPI,
-    KOSDAQ,
+use crate::api::market::MarketAPI;
+use crate::model::order::Order;
+use crate::model::position::Position;
+use crate::model::tick::Tick;
+use crate::schema::positions::dsl::*;
+
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+
+pub struct Broker{
+    api: Box<dyn MarketAPI>,
+    pool: crate::storage::postgres::DbPool,
+    cache_position: Cache<String, Vec<Position>>,
 }
 
-impl Display for Market {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Market::KOSPI => write!(f, "KOSPI"),
-            Market::KOSDAQ => write!(f, "KOSDAQ"),
+
+impl Broker {
+    pub fn new(api: Box<dyn MarketAPI>, database_url: String) -> Self {
+        let manager = ConnectionManager::<PgConnection>::new(database_url);
+        let pool = Pool::builder()
+            .build(manager)
+            .expect("Failed to create pool");
+        let cache = Cache::builder()
+            .time_to_live(Duration::from_secs(300)) // 5 minutes
+            .build();
+        Self {api,pool,cache_position: cache}
+    }
+
+    pub async fn transaction(&self,ctx: CancellationToken) -> Result<Receiver<Tick>> {
+        let (tx,rx) = channel::<Tick>(100);
+        let mut receiver = self.api.connect_websocket(ctx.clone()).await?;
+
+        tokio::spawn(async move {
+            loop {
+                select! {
+                    tk = receiver.recv() => {
+                        if let Some(tk) = tk {
+                            tx.send(tk).await.unwrap()
+                        }
+                    }
+                    _ = ctx.cancelled() => {
+                        break;
+                    }
+                }
+            }
+        });
+        Ok(rx)
+    }
+
+    async fn get_positions(&self) -> Result<Vec<Position>> {
+        let cache_key = "all_positions".to_string();
+        if let Some(cached_positions) = self.cache_position.get(&cache_key).await {
+            return Ok(cached_positions);
+        }
+        let po = self.fetch_positions_from_db().await?;
+        self.cache_position.insert(cache_key, po.clone()).await;
+        Ok(po)
+    }
+
+    async fn fetch_positions_from_db(&self) -> Result<Vec<Position>> {
+        let conn = &mut self.pool.get()?;
+        let results = positions.select(Position::as_select()).load(conn)?;
+        Ok(results)
+    }
+
+
+    async fn execute_order(&self, order: Order) -> Result<(Order)> {
+        match self.api.order(order).await {
+            Ok(order) => {
+
+                Ok(order)
+            }
+            Err(e) => {
+                Err(e)
+            }
         }
     }
 }
 
-impl TryFrom<&str> for Market {
-    type Error = anyhow::Error;
+#[cfg(test)]
+mod tests {
+    use std::env;
 
-    fn try_from(code: &str) -> Result<Self, Self::Error> {
-        match code {
-            "1" => Ok(Market::KOSPI),
-            "2" => Ok(Market::KOSDAQ),
-            _ => Err(anyhow::anyhow!("Invalid market code: {}", code)),
-        }
+    use dotenvy::dotenv;
+    use tokio;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_positions() {
+        // Create a mock database pool
+        dotenv().ok();
+        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let broker = Broker::new(Box::new(MarketAPI::new()), database_url);
+
+        // First call should fetch from DB
+        let positions1 = broker.get_positions().await.unwrap();
+
+        // Second call should return cached result
+        let positions2 = broker.get_positions().await.unwrap();
+
+        assert_eq!(positions1, positions2);
+
+        // Wait for cache to expire
+        tokio::time::sleep(Duration::from_secs(301)).await;
+
+        // This call should fetch from DB again
+        let positions3 = broker.get_positions().await.unwrap();
+
+        // Assuming the DB content hasn't changed
+        assert_eq!(positions1, positions3);
     }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum OrderAction {
-    Buy,
-    Sell,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum OrderType {
-    Limit,
-    Market,
-}
-
-impl OrderAction {
-    fn as_str(&self) -> &str {
-        match self {
-            OrderAction::Sell => "1",
-            OrderAction::Buy => "2",
-        }
-    }
-}
-
-impl OrderType {
-    fn as_str(&self) -> &str {
-        match self {
-            OrderType::Limit => "00",
-            OrderType::Market => "03",
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Order {
-    id: i64,
-    symbol: String,
-    quantity: i64,
-    price: i64,
-    action: OrderAction,
-    order_type: OrderType,
-}
-
-impl Order {
-    fn new(
-        id: i64,
-        symbol: String,
-        quantity: i64,
-        price: i64,
-        action: OrderAction,
-        order_type: OrderType,
-    ) -> Self {
-        Self {
-            id,
-            symbol,
-            quantity,
-            price,
-            action,
-            order_type,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Tick {
-    pub price: String,
-    #[serde(rename = "cvolume")]
-    pub volume: String,
-    #[serde(rename = "shcode")]
-    pub ticker: String,
-}
-
-impl Tick {
-    pub fn new(ticker: String, price: String, volume: String) -> Self {
-        Self {
-            price,
-            volume,
-            ticker,
-        }
-    }
-}
-
-impl Display for Tick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "ticker: {}, price: {}, volume: {}",
-            self.ticker, self.price, self.volume
-        )
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Position {
-    #[serde(rename = "expcode")]
-    pub ticker: String,
-    #[serde(rename = "janqty")]
-    pub quantity: i64,
-    #[serde(rename = "appamt")]
-    evaluation_price: f64,
-    #[serde(rename = "pamt")]
-    pub average_price: f64,
-    #[serde(rename = "dtsunik")]
-    profit: f64,
-    #[serde(rename = "sunikrt")]
-    rate_of_return: String,
-    #[serde(rename = "fee")]
-    fee: f64,
-    #[serde(rename = "tax")]
-    tax: f64,
 }

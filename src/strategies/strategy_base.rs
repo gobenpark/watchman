@@ -1,5 +1,5 @@
-use crate::broker;
-use crate::broker::Tick;
+use crate::model::position::Position;
+use crate::model::tick::Tick;
 use anyhow::Result;
 use async_trait::async_trait;
 use std::fmt::Display;
@@ -11,7 +11,7 @@ pub trait Strategy: Send + Sync {
     async fn evaluate_tick(
         &self,
         tick: &Tick,
-        position: Option<broker::Position>,
+        position: Option<Position>,
     ) -> Result<OrderDecision>;
 }
 

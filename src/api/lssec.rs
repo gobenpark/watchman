@@ -32,9 +32,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use crate::api::market::{MarketAPI, OrderResult,OrderResultType};
 use crate::broker;
-use crate::broker::{
-     Market, Order, OrderAction, OrderType, Position, Tick,
-};
+use crate::model::position::Position;
+use crate::model::order::{Order,OrderAction,OrderType};
+use crate::model::tick::Tick;
+use crate::model::market::Market;
 
 
 static INIT: Once = Once::new();
@@ -416,24 +417,20 @@ impl MarketAPI for LsSecClient {
 
     async fn order(
         &self,
-        symbol: &str,
-        amount: i64,
-        price: i64,
-        order_action: OrderAction,
-        order_type: OrderType,
+        order: Order,
     ) -> Result<Order> {
         let body = serde_json::json!({
             "CSPAT00601InBlock1": {
-                "IsuNo": format!("A{}", symbol),
-                "OrdQty": amount,
+                "IsuNo": format!("A{}", order.symbol),
+                "OrdQty": order.amount,
                 "OrdPrc": || -> i64 {
-                    match order_type {
+                    match order.order_type {
                         OrderType::Market => 0,
-                        OrderType::Limit => price,
+                        OrderType::Limit => order.price,
                     }
                 }(),
-                "BnsTpCode": order_action.as_str(),
-                "OrdprcPtnCode": order_type.as_str(),
+                "BnsTpCode": order.action.as_str(),
+                "OrdprcPtnCode": order.order_type.as_str(),
                 "MgntrnCode": "000",
                 "LoanDt": "",
                 "OrdCndiTpCode": "0"
@@ -446,15 +443,6 @@ impl MarketAPI for LsSecClient {
             .and_then(|block| block.get("OrdNo"))
             .and_then(|ord_no| ord_no.as_i64())
             .context("Failed to get order number")?;
-
-        let order = Order::new(
-            id,
-            symbol.to_string(),
-            amount,
-            price,
-            order_action,
-            order_type,
-        );
         Ok(order)
     }
 }

@@ -5,7 +5,7 @@ title: update position behind pipeline
 graph TD
     subgraph 자동 매매 시스템
         K[Broker]
-        K --> B[Data Storage Optional]
+        K --> B[Data Storage]
         K --> C[데이터 처리 및 분석 모듈]
         B --> C
         subgraph C[데이터 처리 및 분석 모듈]
@@ -18,8 +18,8 @@ graph TD
         subgraph K[Broker]
             A[WebSocket Client]
             K1[Position Management]
-            K2[Risk Management]
             K3[증권사 API Wrapper]
+            K4[Order Execution]
         end
         K --> H[거래 실행 및 관리 모듈]
         subgraph H[거래 실행 및 관리 모듈]

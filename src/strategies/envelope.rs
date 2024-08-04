@@ -1,5 +1,5 @@
-use crate::broker;
-use crate::broker::Tick;
+use crate::model::tick::Tick;
+use crate::model::position::Position;
 use crate::strategies::strategy_base::Strategy;
 use crate::strategies::strategy_base::{OrderDecision, OrderType};
 use anyhow::Result;
@@ -47,7 +47,7 @@ impl Strategy for Envelope {
     async fn evaluate_tick(
         &self,
         tick: &Tick,
-        position: Option<broker::Position>,
+        position: Option<Position>,
     ) -> Result<OrderDecision> {
         let symbol = &tick.ticker;
         let price: f64 = tick.price.parse()?;

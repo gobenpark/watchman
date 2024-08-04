@@ -1,16 +1,15 @@
 use diesel::{Insertable, Queryable, Selectable};
-use uuid::Uuid;
-
-pub mod position;
-
+use serde::{Deserialize, Serialize};
+use diesel::prelude::*;
+#[derive(Serialize, Deserialize, Clone)]
 #[derive(Insertable, Selectable, Queryable, Debug)]
 #[diesel(table_name = crate::schema::positions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Position {
-    pub id: Uuid,
+    id: uuid::Uuid,
     pub ticker: String,
-    pub price: f64,
-    pub amount: f64,
-    pub strategy_id: String,
-    pub created_at: chrono::NaiveDateTime,
+    pub quantity: f64,
+    price: f64,
+    strategy_id: String,
+    created_at: chrono::NaiveDateTime,
 }
