@@ -1,4 +1,3 @@
-mod storage;
 
 use std::env;
 use std::sync::Arc;
@@ -16,7 +15,6 @@ use anyhow::Result;
 use tokio::task::JoinHandle;
 // use tokio_stream::StreamExt;
 use crate::broker::{Broker};
-use crate::storage::postgres::PostgresStorage;
 use dotenvy::dotenv;
 use futures_util::{future, pin_mut, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
 use manager::trading::TradingManager;

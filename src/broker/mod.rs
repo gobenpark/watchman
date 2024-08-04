@@ -10,18 +10,19 @@ use teloxide::payloads::SetStickerPositionInSetSetters;
 use tokio::select;
 use tokio::sync::mpsc::{channel, Receiver};
 use tokio_util::sync::CancellationToken;
+use tracing::error;
 
 use crate::api::market::MarketAPI;
-use crate::model::order::Order;
+use crate::model::order::{Order,OrderInserter};
 use crate::model::position::Position;
 use crate::model::tick::Tick;
 use crate::schema::positions::dsl::*;
-
+use crate::schema::orders::dsl::*;
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 pub struct Broker{
     api: Box<dyn MarketAPI>,
-    pool: crate::storage::postgres::DbPool,
+    pool: DbPool,
     cache_position: Cache<String, Vec<Position>>,
 }
 
@@ -32,9 +33,7 @@ impl Broker {
         let pool = Pool::builder()
             .build(manager)
             .expect("Failed to create pool");
-        let cache = Cache::builder()
-            .time_to_live(Duration::from_secs(300)) // 5 minutes
-            .build();
+        let cache = Cache::new(10_000);
         Self {api,pool,cache_position: cache}
     }
 
@@ -76,16 +75,25 @@ impl Broker {
     }
 
 
-    async fn execute_order(&self, order: Order) -> Result<(Order)> {
-        match self.api.order(order).await {
-            Ok(order) => {
+    async fn execute_order(&self, o: Order) -> Result<(Order)> {
+        let od = OrderInserter::from(o);
 
-                Ok(order)
+        let conn = &mut self.pool.get()?;
+
+        conn.transaction::<_,_,_>(|conn| async move {
+            let o1 = o.clone();
+            match self.api.order(o1).await {
+                Ok(order) => {
+                    diesel::insert_into(orders).values(od).execute(conn)?;
+                    Ok(order)
+                }
+                Err(e) => {
+                    error!("Failed to execute order: {}", e);
+                    Err(diesel::result::Error::RollbackTransaction)
+                }
             }
-            Err(e) => {
-                Err(e)
-            }
-        }
+        })
+
     }
 }
 
@@ -95,6 +103,7 @@ mod tests {
 
     use dotenvy::dotenv;
     use tokio;
+    use crate::api::lssec::LsSecClient;
 
     use super::*;
 
@@ -103,7 +112,7 @@ mod tests {
         // Create a mock database pool
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let broker = Broker::new(Box::new(MarketAPI::new()), database_url);
+        let broker = Broker::new(Box::new(LsSecClient::new("".to_string(),"".to_string())), database_url);
 
         // First call should fetch from DB
         let positions1 = broker.get_positions().await.unwrap();

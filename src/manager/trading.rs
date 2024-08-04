@@ -57,7 +57,7 @@ impl TradingManager {
 
         let mut socket = self.broker.transaction(socket_cancel).await?;
         for ticker in &["005930", "005935", "103590"] {
-            self.client.subscribe(ticker).await?;
+            // self.client.subscribe(ticker).await?;
         }
         let (decision_tx, mut decision_rx) = channel(100);
         let ttx = tx.clone();

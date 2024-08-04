@@ -36,6 +36,7 @@ polars-lazy = "0.41.3"
 polars-sql = "0.41.3"
 tokio-util = "0.7.11"
 uuid = "1.10.0"
+diesel-async = { version = "0.5.0", features = ["postgres"] }
 
 
 [build-dependencies]

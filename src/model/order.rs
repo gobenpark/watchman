@@ -30,30 +30,54 @@ impl OrderType {
     }
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::orders)]
+pub struct OrderInserter {
+    pub ticker: String,
+    pub quantity: i32,
+    pub price: f64,
+    #[diesel(column_name = "order_action")]
+    pub action: String,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+
+impl OrderInserter {
+    pub fn from(order: Order) -> Self {
+        Self {
+            ticker: order.ticker,
+            quantity: order.quantity,
+            price: order.price,
+            action: {
+                match order.action {
+                    OrderAction::Buy => "2".to_string(),
+                    OrderAction::Sell => "1".to_string(),
+                }
+            },
+            created_at: chrono::Utc::now().naive_utc(),
+        }
+    }
+}
+
 
 
 #[derive(Clone, Debug)]
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = crate::schema::orders)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Order {
     id: i32,
     ticker: String,
-    quantity: i64,
-    price: i64,
-    #[diesel(embed)]
+    quantity: i32,
+    price: f64,
+
     action: OrderAction,
-    #[diesel(embed)]
     order_type: OrderType,
-    pub created_at: chrono::NaiveDateTime,
 }
 
 impl Order {
     pub fn new(
-        id: i64,
+        id: i32,
         ticker: String,
-        quantity: i64,
-        price: i64,
+        quantity: i32,
+        price: f64,
         action: OrderAction,
         order_type: OrderType,
     ) -> Self {
