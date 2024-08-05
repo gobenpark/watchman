@@ -8,4 +8,5 @@ CREATE TABLE IF NOT EXISTS public.orders
     quantity     integer not null,
     order_action  varchar(1) not null,
     created_at timestamp(6) default now() not null
+    accepted     boolean      default false not null
 );

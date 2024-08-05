@@ -39,6 +39,8 @@ pub struct OrderInserter {
     pub price: f64,
     #[diesel(column_name = "order_action")]
     pub action: String,
+    #[diesel(skip_insertion)]
+    accepted: bool,
     pub created_at: chrono::NaiveDateTime,
 }
 
@@ -56,6 +58,7 @@ impl OrderInserter {
                     OrderAction::Sell => "1".to_string(),
                 }
             },
+            accepted: false,
             created_at: chrono::Utc::now().naive_utc(),
         }
     }

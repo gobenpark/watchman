@@ -4,7 +4,10 @@ use anyhow::Result;
 use chrono::Duration;
 use diesel::{Insertable, PgConnection};
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::pooled_connection::{AsyncDieselConnectionManager, deadpool};
+use diesel_async::pooled_connection::deadpool::{Object, Pool};
+use diesel_async::scoped_futures::ScopedFutureExt;
 use moka::future::Cache;
 use teloxide::payloads::SetStickerPositionInSetSetters;
 use tokio::select;
@@ -13,12 +16,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 use crate::api::market::MarketAPI;
-use crate::model::order::{Order,OrderInserter,OrderAction,OrderType};
+use crate::model::order::{Order, OrderAction, OrderInserter, OrderType};
 use crate::model::position::Position;
 use crate::model::tick::Tick;
-use crate::schema::positions::dsl::*;
 use crate::schema::orders::dsl::*;
-pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+use crate::schema::positions::dsl::*;
+
+type DbPool = Pool<AsyncPgConnection>;
 
 pub struct Broker{
     api: Box<dyn MarketAPI>,
@@ -29,10 +33,8 @@ pub struct Broker{
 
 impl Broker {
     pub fn new(api: Box<dyn MarketAPI>, database_url: String) -> Self {
-        let manager = ConnectionManager::<PgConnection>::new(database_url);
-        let pool = Pool::builder()
-            .build(manager)
-            .expect("Failed to create pool");
+        let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url);
+        let pool = Pool::builder(config).build().expect("fail to create pool builder");
         let cache = Cache::new(10_000);
         Self {api,pool,cache_position: cache}
     }
@@ -69,30 +71,30 @@ impl Broker {
     }
 
     async fn fetch_positions_from_db(&self) -> Result<Vec<Position>> {
-        let conn = &mut self.pool.get()?;
-        let results = positions.select(Position::as_select()).load(conn)?;
+        let conn = &mut self.pool.get().await?;
+        let results = positions.select(Position::as_select()).load(conn).await?;
         Ok(results)
     }
 
 
-    async fn execute_order(&self, o: Order) -> Result<(Order)> {
-        let o1 = o.clone();
-        let conn = &mut self.pool.get()?;
-
-        let result = match self.api.order(o1).await {
-            Ok(order) => {
-                println!("Order executed: {:?}", order);
-                let o1   = order.clone();
-                let od = OrderInserter::from(o1);
-                diesel::insert_into(orders).values(od).execute(conn)?;
-                Ok(order)
+    async fn execute_order(&self, o: Order) -> Result<Order> {
+        let conn = &mut self.pool.get().await?;
+        let result = conn.transaction::<_,diesel::result::Error,_>(|conn| async move {
+            match self.api.order(o).await {
+                Ok(order) => {
+                    println!("Order executed: {:?}", order);
+                    let o1   = order.clone();
+                    let od = OrderInserter::from(o1);
+                    diesel::insert_into(orders).values(od).execute(conn).await?;
+                    Ok(order)
+                }
+                Err(e) => {
+                    println!("Failed to execute order: {}", e);
+                    error!("Failed to execute order: {}", e);
+                    Err(diesel::result::Error::RollbackTransaction)
+                }
             }
-            Err(e) => {
-                println!("Failed to execute order: {}", e);
-                error!("Failed to execute order: {}", e);
-                Err(diesel::result::Error::RollbackTransaction)
-            }
-        }?;
+        }.scope_boxed()).await?;
         Ok(result)
     }
 }
@@ -100,9 +102,10 @@ impl Broker {
 #[cfg(test)]
 mod tests {
     use std::env;
-    use diesel_async::RunQueryDsl;
+
     use dotenvy::dotenv;
     use tokio;
+
     use crate::api::lssec::LsSecClient;
 
     use super::*;

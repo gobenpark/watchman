@@ -68,6 +68,7 @@ diesel::table! {
         #[max_length = 1]
         order_action -> Varchar,
         created_at -> Timestamp,
+        accepted -> Bool,
     }
 }
 
