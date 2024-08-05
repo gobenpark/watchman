@@ -32,11 +32,12 @@ impl OrderType {
 
 #[derive(Insertable,Debug)]
 #[diesel(table_name = crate::schema::orders)]
-pub struct OrderInserter {
+pub struct NewOrder {
     pub id: i32,
     pub ticker: String,
     pub quantity: i32,
     pub price: f64,
+    pub strategy_id: String,
     #[diesel(column_name = "order_action")]
     pub action: String,
     #[diesel(skip_insertion)]
@@ -45,13 +46,14 @@ pub struct OrderInserter {
 }
 
 
-impl OrderInserter {
+impl NewOrder {
     pub fn from(order: Order) -> Self {
         Self {
             id: order.id,
             ticker: order.ticker,
             quantity: order.quantity,
             price: order.price,
+            strategy_id: "default".to_string(),
             action: {
                 match order.action {
                     OrderAction::Buy => "2".to_string(),
@@ -72,7 +74,7 @@ pub struct Order {
     pub ticker: String,
     pub quantity: i32,
     pub price: f64,
-
+    pub strategy_id: String,
     pub action: OrderAction,
     pub order_type: OrderType,
 }
@@ -83,6 +85,7 @@ impl Order {
         ticker: String,
         quantity: i32,
         price: f64,
+        strategy_id: String,
         action: OrderAction,
         order_type: OrderType,
     ) -> Self {
@@ -91,6 +94,7 @@ impl Order {
             ticker,
             quantity,
             price,
+            strategy_id,
             action,
             order_type,
         }

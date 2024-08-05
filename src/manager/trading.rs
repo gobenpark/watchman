@@ -54,11 +54,9 @@ impl TradingManager {
         let cancel = CancellationToken::new();
         let socket_cancel = cancel.clone();
 
-
-        let mut socket = self.broker.transaction(socket_cancel).await?;
-        for ticker in &["005930", "005935", "103590"] {
-            // self.client.subscribe(ticker).await?;
-        }
+        let order_cancel = cancel.clone();
+        self.broker.process_order(order_cancel).await?;
+        let mut socket = self.broker.transaction(socket_cancel,&["005930", "005935", "103590"]).await?;
         let (decision_tx, mut decision_rx) = channel(100);
         let ttx = tx.clone();
         tokio::spawn(async move {
@@ -95,6 +93,7 @@ impl TradingManager {
                         price: 0.0,
                         reason: format!("strategy id: {}, tick: {:?}", id, tick),
                     };
+                    println!("Decision: {:?}", decision);
                     let _ = decision_tx.send((tick, decision)).await;
                 }
             });

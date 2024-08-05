@@ -69,6 +69,8 @@ diesel::table! {
         order_action -> Varchar,
         created_at -> Timestamp,
         accepted -> Bool,
+        #[max_length = 10]
+        strategy_id -> Nullable<Varchar>,
     }
 }
 
