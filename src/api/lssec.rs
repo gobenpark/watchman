@@ -37,9 +37,6 @@ use crate::model::order::{Order,OrderAction,OrderType};
 use crate::model::tick::Tick;
 use crate::model::market::Market;
 
-
-static INIT: Once = Once::new();
-
 pub struct LsSecClient {
     key: String,
     secret: String,
@@ -214,35 +211,35 @@ impl MarketAPI for LsSecClient {
                     if let Ok(message) = msg {
                         if let Ok(json) = serde_json::from_str::<Value>(&message.to_string()) {
                         if let Some(trcd) = json.get("header").and_then(|header| header.get("tr_cd")) {
-                         let orderNo = json
+                         let order_no = json
                             .get("body")
                             .and_then(|body| body.get("ordno"))
                             .and_then(|ordno| ordno.as_str())
                             .and_then(|s| Some(s.to_string()));
                             match trcd.as_str() {
                                 Some("SC0") => {
-                                        if let Some(orderNo) = orderNo {
-                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Wait })
+                                        if let Some(order_no) = order_no {
+                                            return Some(OrderResult{ id: order_no, result: OrderResultType::Wait })
                                         }
                                 },
                                 Some("SC1") => {
-                                        if let Some(orderNo) = orderNo {
-                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Success })
+                                        if let Some(order_no) = order_no {
+                                            return Some(OrderResult{ id: order_no, result: OrderResultType::Success })
                                         }
                                 },
                                 Some("SC2") => {
-                                        if let Some(orderNo) = orderNo {
-                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Edit })
+                                        if let Some(order_no) = order_no {
+                                            return Some(OrderResult{ id: order_no, result: OrderResultType::Edit })
                                         }
                                 },
                                 Some("SC3") => {
-                                        if let Some(orderNo) = orderNo {
-                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Cancel })
+                                        if let Some(order_no) = order_no {
+                                            return Some(OrderResult{ id: order_no, result: OrderResultType::Cancel })
                                         }
                                 },
                                 Some("SC4") => {
-                                    if let Some(orderNo) = orderNo {
-                                            return Some(OrderResult{ id: orderNo, result: OrderResultType::Denied })
+                                    if let Some(order_no) = order_no {
+                                            return Some(OrderResult{ id: order_no, result: OrderResultType::Denied })
                                         }
                                 }
                                 _ => {
@@ -405,7 +402,7 @@ impl MarketAPI for LsSecClient {
         let body = serde_json::json!({
             "CSPAT00801InBlock1": {  // 정확한 tr_cd를 사용해야 합니다. 여기서는 예시로 CSPAT00800을 사용했습니다.
                 "OrgOrdNo": order.id,
-                "IsuNo": format!("A{}", order.ticker),
+                "IsuNo": format!("A{}", order.ticker()),
                 "OrdQty": order.quantity,
             }
         });
@@ -421,7 +418,7 @@ impl MarketAPI for LsSecClient {
     ) -> Result<Order> {
         let body = serde_json::json!({
             "CSPAT00601InBlock1": {
-                "IsuNo": format!("A{}", order.ticker),
+                "IsuNo": format!("A{}", order.ticker()),
                 "OrdQty": order.quantity,
                 "OrdPrc": || -> i64 {
                     match order.order_type {

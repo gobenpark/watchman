@@ -42,7 +42,7 @@ impl Broker {
         Self {api,pool,cache_position: cache}
     }
 
-    pub async fn transaction(&self,ctx: CancellationToken,target: &[&str]) -> Result<Receiver<Tick>> {
+    pub async fn transaction(&self,ctx: CancellationToken,target: Vec<&String>) -> Result<Receiver<Tick>> {
         let (tx,rx) = channel::<Tick>(100);
         let mut receiver = self.api.connect_websocket(ctx.clone()).await?;
         tokio::spawn(async move {
@@ -127,11 +127,11 @@ impl Broker {
         use crate::schema::positions::dsl::*;
         let conn = &mut self.pool.get().await.expect("Failed to get DB connection");
         let mut po = positions
-            .filter(ticker.eq(o.ticker).and(strategy_id.eq(o.strategy_id)))
+            .filter(ticker.eq(o.ticker()).and(strategy_id.eq(o.strategy_id())))
             .select(Position::as_select())
             .first(conn).await?;
-        let total = po.quantity + o.quantity as f64;
-        let avg_price = (po.price * po.quantity + o.price * o.quantity as f64) / total;
+        let total = po.quantity() + o.quantity as f64;
+        let avg_price = (po.price() * po.quantity() + o.price * o.quantity as f64) / total;
         diesel::update(positions).set((
             quantity.eq(total),
             price.eq(avg_price)
@@ -142,7 +142,7 @@ impl Broker {
 
     }
 
-    async fn get_positions(&self) -> Result<Vec<Position>> {
+    pub async fn get_positions(&self) -> Result<Vec<Position>> {
         let cache_key = "all_positions".to_string();
         if let Some(cached_positions) = self.cache_position.get(&cache_key).await {
             return Ok(cached_positions);
@@ -159,7 +159,7 @@ impl Broker {
     }
 
 
-    async fn execute_order(&self, o: Order) -> Result<Order> {
+    pub async fn execute_order(&self, o: Order) -> Result<Order> {
         let conn = &mut self.pool.get().await?;
         let result = conn.transaction::<_,diesel::result::Error,_>(|conn| async move {
             match self.api.order(o).await {

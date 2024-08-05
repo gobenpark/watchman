@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use diesel::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
@@ -71,13 +72,14 @@ impl NewOrder {
 #[derive(Clone, Debug)]
 pub struct Order {
     pub id: i32,
-    pub ticker: String,
+    ticker: String,
     pub quantity: i32,
     pub price: f64,
     pub strategy_id: String,
     pub action: OrderAction,
     pub order_type: OrderType,
 }
+
 
 impl Order {
     pub fn new(
@@ -98,6 +100,14 @@ impl Order {
             action,
             order_type,
         }
+    }
+
+    pub fn ticker(&self) -> &str {
+        &self.ticker
+    }
+
+    pub fn strategy_id(&self) -> &str {
+        &self.strategy_id
     }
 
     pub fn set_id(&mut self, id: i32) {

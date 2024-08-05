@@ -1,5 +1,6 @@
-use crate::strategies::strategy_base::{OrderDecision, Strategy};
 use crate::model::position::Position;
+use crate::model::order::Order;
+use crate::strategies::strategy_base::Strategy;
 use crate::model::tick::Tick;
 use async_trait::async_trait;
 
@@ -24,8 +25,8 @@ impl Strategy for SampleStrategy {
     async fn evaluate_tick(
         &self,
         tick: &Tick,
-        position: Option<Position>,
-    ) -> anyhow::Result<OrderDecision> {
+        position: Option<&Position>,
+    ) -> Option<Order> {
         todo!()
     }
 }
