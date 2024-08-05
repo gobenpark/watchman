@@ -13,7 +13,7 @@ pub enum OrderType {
 }
 
 impl OrderAction {
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             OrderAction::Sell => "1",
             OrderAction::Buy => "2",
@@ -22,7 +22,7 @@ impl OrderAction {
 }
 
 impl OrderType {
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             OrderType::Limit => "00",
             OrderType::Market => "03",
@@ -30,9 +30,10 @@ impl OrderType {
     }
 }
 
-#[derive(Insertable)]
+#[derive(Insertable,Debug)]
 #[diesel(table_name = crate::schema::orders)]
 pub struct OrderInserter {
+    pub id: i32,
     pub ticker: String,
     pub quantity: i32,
     pub price: f64,
@@ -45,6 +46,7 @@ pub struct OrderInserter {
 impl OrderInserter {
     pub fn from(order: Order) -> Self {
         Self {
+            id: order.id,
             ticker: order.ticker,
             quantity: order.quantity,
             price: order.price,
@@ -63,13 +65,13 @@ impl OrderInserter {
 
 #[derive(Clone, Debug)]
 pub struct Order {
-    id: i32,
-    ticker: String,
-    quantity: i32,
-    price: f64,
+    pub id: i32,
+    pub ticker: String,
+    pub quantity: i32,
+    pub price: f64,
 
-    action: OrderAction,
-    order_type: OrderType,
+    pub action: OrderAction,
+    pub order_type: OrderType,
 }
 
 impl Order {
@@ -88,7 +90,10 @@ impl Order {
             price,
             action,
             order_type,
-            created_at: chrono::Utc::now().naive_utc(),
         }
+    }
+
+    pub fn set_id(&mut self, id: i32) {
+        self.id = id;
     }
 }

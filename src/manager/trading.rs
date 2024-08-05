@@ -29,10 +29,10 @@ pub struct TradingManager {
 }
 
 impl TradingManager {
-    pub fn new(client: Arc<broker::Broker>) -> Self {
+    pub fn new(broker: Arc<broker::Broker>) -> Self {
         Self {
             strategies: Vec::new(),
-            client: client,
+            broker,
         }
     }
 

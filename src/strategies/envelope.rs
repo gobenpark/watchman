@@ -57,7 +57,7 @@ impl Strategy for Envelope {
                 let sell = Python::with_gil(|py| -> PyResult<bool> {
                     let instance = self.app.call0(py)?;
                     let target: bool = instance
-                        .call_method1(py, "sell", (symbol, price, p.average_price))?
+                        .call_method1(py, "sell", (symbol, price, p.price))?
                         .extract(py)?;
                     Ok(target)
                 })?;

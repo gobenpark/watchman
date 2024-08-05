@@ -6,9 +6,10 @@ use diesel::prelude::*;
 #[diesel(table_name = crate::schema::positions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Position {
-    id: uuid::Uuid,
+    pub id: uuid::Uuid,
     pub ticker: String,
     pub quantity: f64,
+    pub
     price: f64,
     strategy_id: String,
     created_at: chrono::NaiveDateTime,

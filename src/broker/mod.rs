@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 use crate::api::market::MarketAPI;
-use crate::model::order::{Order,OrderInserter};
+use crate::model::order::{Order,OrderInserter,OrderAction,OrderType};
 use crate::model::position::Position;
 use crate::model::tick::Tick;
 use crate::schema::positions::dsl::*;
@@ -76,31 +76,31 @@ impl Broker {
 
 
     async fn execute_order(&self, o: Order) -> Result<(Order)> {
-        let od = OrderInserter::from(o);
-
+        let o1 = o.clone();
         let conn = &mut self.pool.get()?;
 
-        conn.transaction::<_,_,_>(|conn| async move {
-            let o1 = o.clone();
-            match self.api.order(o1).await {
-                Ok(order) => {
-                    diesel::insert_into(orders).values(od).execute(conn)?;
-                    Ok(order)
-                }
-                Err(e) => {
-                    error!("Failed to execute order: {}", e);
-                    Err(diesel::result::Error::RollbackTransaction)
-                }
+        let result = match self.api.order(o1).await {
+            Ok(order) => {
+                println!("Order executed: {:?}", order);
+                let o1   = order.clone();
+                let od = OrderInserter::from(o1);
+                diesel::insert_into(orders).values(od).execute(conn)?;
+                Ok(order)
             }
-        })
-
+            Err(e) => {
+                println!("Failed to execute order: {}", e);
+                error!("Failed to execute order: {}", e);
+                Err(diesel::result::Error::RollbackTransaction)
+            }
+        }?;
+        Ok(result)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::env;
-
+    use diesel_async::RunQueryDsl;
     use dotenvy::dotenv;
     use tokio;
     use crate::api::lssec::LsSecClient;
@@ -112,23 +112,13 @@ mod tests {
         // Create a mock database pool
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let broker = Broker::new(Box::new(LsSecClient::new("".to_string(),"".to_string())), database_url);
+        let broker = Broker::new(Box::new(LsSecClient::new(env::var("LSSEC_KEY").unwrap(),env::var("LSSEC_SECRET").unwrap())), database_url);
 
-        // First call should fetch from DB
-        let positions1 = broker.get_positions().await.unwrap();
+        let od = Order::new(0,"005935".to_string(), 1, 57000.0, OrderAction::Buy, OrderType::Limit);
 
-        // Second call should return cached result
-        let positions2 = broker.get_positions().await.unwrap();
+        broker.execute_order(
+            od
+        ).await.unwrap();
 
-        assert_eq!(positions1, positions2);
-
-        // Wait for cache to expire
-        tokio::time::sleep(Duration::from_secs(301)).await;
-
-        // This call should fetch from DB again
-        let positions3 = broker.get_positions().await.unwrap();
-
-        // Assuming the DB content hasn't changed
-        assert_eq!(positions1, positions3);
     }
 }
