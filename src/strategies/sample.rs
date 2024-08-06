@@ -3,6 +3,7 @@ use crate::model::order::Order;
 use crate::strategies::strategy_base::Strategy;
 use crate::model::tick::Tick;
 use async_trait::async_trait;
+use tracing::info;
 
 pub struct SampleStrategy {}
 
@@ -27,6 +28,7 @@ impl Strategy for SampleStrategy {
         tick: &Tick,
         position: Option<&Position>,
     ) -> Option<Order> {
-        todo!()
+        info!("SampleStrategy evaluate_tick {}",tick);
+        None
     }
 }

@@ -2,7 +2,6 @@
 use std::env;
 use std::sync::Arc;
 use std::thread::sleep;
-use teloxide::prelude::*;
 use tokio::signal;
 mod broker;
 mod manager;
@@ -10,6 +9,8 @@ pub mod schema;
 mod strategies;
 mod api;
 mod model;
+mod models;
+mod repository;
 
 use anyhow::Result;
 use tokio::task::JoinHandle;

@@ -5,12 +5,12 @@ use async_trait::async_trait;
 use futures::future::join_all;
 use std::collections::HashSet;
 use std::sync::Arc;
+use diesel::serialize::ToSql;
 use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-// use futures::{StreamExt};
 use crate::model::tick::Tick;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tokio_stream::StreamExt;
@@ -37,10 +37,13 @@ impl TradingManager {
 
     pub async fn get_all_targets(&self) -> Result<HashSet<String>> {
         let mut targets = HashSet::new();
-        for strategy in &self.strategies {
-            let strategy = strategy.lock().await;
-            targets.extend(strategy.get_targets());
-        }
+        // for strategy in &self.strategies {
+        //     let strategy = strategy.lock().await;
+        //     targets.extend(strategy.get_targets());
+        // }
+
+        targets.insert("005930".to_string());
+        targets.insert("005935".to_string());
         Ok(targets)
     }
 

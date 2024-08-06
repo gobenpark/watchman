@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use diesel::prelude::*;
-
+use sea_orm::entity::prelude::*;
 #[derive(Copy, Clone, Debug)]
 pub enum OrderAction {
     Buy,
@@ -41,7 +41,6 @@ pub struct NewOrder {
     pub strategy_id: String,
     #[diesel(column_name = "order_action")]
     pub action: String,
-    #[diesel(skip_insertion)]
     accepted: bool,
     pub created_at: chrono::NaiveDateTime,
 }

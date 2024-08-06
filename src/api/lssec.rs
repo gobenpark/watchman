@@ -16,7 +16,6 @@ use moka::future::Cache;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use teloxide::dptree::di::DependencySupplier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};

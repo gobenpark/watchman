@@ -10,7 +10,6 @@ use diesel_async::pooled_connection::deadpool::{Object, Pool};
 use diesel_async::scoped_futures::ScopedFutureExt;
 use log::info;
 use moka::future::Cache;
-use teloxide::payloads::SetStickerPositionInSetSetters;
 use tokio::select;
 use tokio::sync::mpsc::{channel, Receiver};
 use tokio_util::sync::CancellationToken;
