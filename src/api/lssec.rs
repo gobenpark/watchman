@@ -310,16 +310,16 @@ impl MarketAPI for LsSecClient {
         Ok(rx)
     }
 
-    async fn subscribe(&self, ticker: &str) -> Result<()> {
+    async fn subscribe(&self, ticker: String) -> Result<()> {
         let mut channels = self.tick_channels.lock().await;
-        if !channels.contains_key(ticker) {
+        if !channels.contains_key(&ticker) {
             let mut sender = self.ws_sender.lock().await;
             if sender.is_none() {
                 return Err(anyhow::Error::msg("No websocket connection"));
             }
             drop(sender);
             let tickermap = self.get_tickers().await?;
-            let tickers = tickermap.get(ticker).context("invalid ticker")?;
+            let tickers = tickermap.get(&ticker).context("invalid ticker")?;
             let data = serde_json::json!({
                 "header": {
                     "token": self.get_access_token().await?,

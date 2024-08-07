@@ -9,7 +9,6 @@ pub mod schema;
 mod strategies;
 mod api;
 mod model;
-mod models;
 mod repository;
 
 use anyhow::Result;
@@ -39,9 +38,9 @@ async fn main() -> Result<()> {
     let client = api::lssec::LsSecClient::new(key, secret);
     let pcli = Arc::new(client.clone());
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-
-    let broker = Arc::new(Broker::new(Box::new(client), database_url));
-    let mut manager = TradingManager::new(broker);
+    let repository = Arc::new(repository::Repository::new(database_url));
+    let broker = Arc::new(Broker::new(Box::new(client), repository.clone()));
+    let mut manager = TradingManager::new(broker, repository.clone());
     let envelope = Envelope::new();
     let sample = strategies::sample::SampleStrategy::new();
     manager.add_strategy(Box::new(envelope));

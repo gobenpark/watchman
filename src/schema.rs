@@ -65,12 +65,12 @@ diesel::table! {
         ticker -> Varchar,
         price -> Float8,
         quantity -> Int4,
-        #[max_length = 1]
-        order_action -> Varchar,
+        order_action -> Int4,
         created_at -> Timestamp,
         accepted -> Bool,
         #[max_length = 10]
-        strategy_id -> Nullable<Varchar>,
+        strategy_id -> Varchar,
+        order_type -> Int4,
     }
 }
 

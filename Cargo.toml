@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-diesel = { version = "2.2.0", features = ["postgres", "r2d2","chrono","uuid"] }
+diesel = { version = "2.2.0", features = ["postgres", "r2d2","chrono","uuid","numeric"] }
 dotenvy = "0.15.7"
 log = "0.4.21"
 pretty_env_logger = "0.5.0"
@@ -36,7 +36,8 @@ polars-sql = "0.41.3"
 tokio-util = "0.7.11"
 uuid = { version = "1.10.0", features = ["v4", "serde"] }
 diesel-async = { version = "0.5.0", features = ["deadpool", "postgres"] }
-sea-orm = { version = "1.0.0-rc.5", features = ["runtime-tokio-rustls", "sqlx-postgres","macros"] }
+byteorder = "1.5.0"
+bigdecimal = { version = "0.4.5", features = ["serde"] }
 
 
 [build-dependencies]

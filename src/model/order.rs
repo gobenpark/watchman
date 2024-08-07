@@ -1,17 +1,67 @@
 use std::fmt::Display;
+use std::io::Write;
+use diesel::deserialize::FromSql;
+use diesel::{AsExpression, deserialize, FromSqlRow, serialize};
+use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
-use sea_orm::entity::prelude::*;
-#[derive(Copy, Clone, Debug)]
+use diesel::serialize::{IsNull, Output, ToSql};
+use diesel::sql_types::{Integer, VarChar};
+use tokio::io::AsyncReadExt;
+use byteorder::{NetworkEndian, ReadBytesExt};
+#[derive(Copy, Clone, Debug,FromSqlRow, AsExpression)]
+#[diesel(sql_type = Integer)]
 pub enum OrderAction {
-    Buy,
-    Sell,
+    Buy = 1,
+    Sell = 2,
 }
 
-#[derive(Copy, Clone, Debug)]
+
+#[derive(Copy, Clone, Debug,FromSqlRow, AsExpression)]
+#[diesel(sql_type = Integer)]
 pub enum OrderType {
-    Limit,
-    Market,
+    Limit = 1,
+    Market = 2,
 }
+impl ToSql<Integer, Pg> for OrderType {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        match self {
+            OrderType::Limit => <i32 as ToSql<Integer,Pg>>::to_sql(&1, out),
+            OrderType::Market => <i32 as ToSql<Integer,Pg>>::to_sql(&2, out)
+        }
+    }
+}
+
+impl FromSql<Integer, Pg> for OrderType {
+    fn from_sql(bytes: PgValue) -> deserialize::Result<Self> {
+        match <i32 as FromSql<Integer, Pg>>::from_sql(bytes)? {
+            1 => Ok(OrderType::Limit),
+            2 => Ok(OrderType::Market),
+            _ => Err("Unrecognized enum variant".into()),
+        }
+    }
+}
+
+impl ToSql<Integer, Pg> for OrderAction {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        match self {
+            OrderAction::Buy => <i32 as ToSql<Integer,Pg>>::to_sql(&1, out),
+            OrderAction::Sell => <i32 as ToSql<Integer,Pg>>::to_sql(&2, out)
+        }
+    }
+}
+
+impl FromSql<Integer, Pg> for OrderAction {
+    fn from_sql(bytes: PgValue) -> deserialize::Result<Self> {
+        match <i32 as FromSql<Integer, Pg>>::from_sql(bytes)? {
+            1 => Ok(OrderAction::Buy),
+            2 => Ok(OrderAction::Sell),
+            _ => Err("Unrecognized enum variant".into()),
+        }
+    }
+}
+
+
+
 
 impl OrderAction {
     pub fn as_str(&self) -> &str {
@@ -31,7 +81,7 @@ impl OrderType {
     }
 }
 
-#[derive(Insertable,Debug)]
+#[derive(Insertable,Debug,)]
 #[diesel(table_name = crate::schema::orders)]
 pub struct NewOrder {
     pub id: i32,
@@ -40,9 +90,8 @@ pub struct NewOrder {
     pub price: f64,
     pub strategy_id: String,
     #[diesel(column_name = "order_action")]
-    pub action: String,
-    accepted: bool,
-    pub created_at: chrono::NaiveDateTime,
+    pub action: OrderAction,
+    pub order_type: OrderType
 }
 
 
@@ -54,14 +103,8 @@ impl NewOrder {
             quantity: order.quantity,
             price: order.price,
             strategy_id: "default".to_string(),
-            action: {
-                match order.action {
-                    OrderAction::Buy => "2".to_string(),
-                    OrderAction::Sell => "1".to_string(),
-                }
-            },
-            accepted: false,
-            created_at: chrono::Utc::now().naive_utc(),
+            action: order.action,
+            order_type: order.order_type,
         }
     }
 }
@@ -69,14 +112,18 @@ impl NewOrder {
 
 
 #[derive(Clone, Debug)]
+#[derive(Queryable,Selectable)]
+#[diesel(table_name = crate::schema::orders)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Order {
     pub id: i32,
     ticker: String,
     pub quantity: i32,
     pub price: f64,
     pub strategy_id: String,
+    #[diesel(column_name = "order_action")]
     pub action: OrderAction,
-    pub order_type: OrderType,
+    pub order_type: OrderType
 }
 
 
@@ -88,7 +135,6 @@ impl Order {
         price: f64,
         strategy_id: String,
         action: OrderAction,
-        order_type: OrderType,
     ) -> Self {
         Self {
             id,
@@ -97,7 +143,7 @@ impl Order {
             price,
             strategy_id,
             action,
-            order_type,
+            order_type: OrderType::Limit,
         }
     }
 

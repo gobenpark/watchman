@@ -17,17 +17,20 @@ use tokio_stream::StreamExt;
 use tokio_util::io::StreamReader;
 use tonic::codegen::Body;
 use crate::model::order::Order;
+use crate::repository::Repository;
 
 pub struct TradingManager {
     strategies: Vec<Arc<Mutex<Box<dyn Strategy>>>>,
     broker: Arc<broker::Broker>,
+    repository: Arc<Repository>,
 }
 
 impl TradingManager {
-    pub fn new(broker: Arc<broker::Broker>) -> Self {
+    pub fn new(broker: Arc<broker::Broker>,repository: Arc<Repository>) -> Self {
         Self {
             strategies: Vec::new(),
             broker,
+            repository
         }
     }
 
@@ -35,24 +38,19 @@ impl TradingManager {
         self.strategies.push(Arc::new(Mutex::new(strategy)));
     }
 
-    pub async fn get_all_targets(&self) -> Result<HashSet<String>> {
-        let mut targets = HashSet::new();
-        // for strategy in &self.strategies {
-        //     let strategy = strategy.lock().await;
-        //     targets.extend(strategy.get_targets());
-        // }
-
-        targets.insert("005930".to_string());
-        targets.insert("005935".to_string());
-        Ok(targets)
+    pub async fn get_all_targets(&self) -> Result<Vec<String>> {
+        let result = self.repository.get_daily_caps().await?.iter().map(|c| c.ticker.clone()).collect();
+        Ok(result)
     }
 
     pub async fn run(&self) -> Result<()> {
+
+        let targets = self.get_all_targets().await?;
         let (mut tx, mut rx) = tokio::sync::broadcast::channel::<Tick>(100);
         let cancel = CancellationToken::new();
         self.broker.process_order(cancel.clone()).await?;
         let targets = self.get_all_targets().await?;
-        let socket = self.broker.transaction(cancel.clone(),targets.iter().collect::<Vec<_>>()).await?;
+        let socket = self.broker.transaction(cancel.clone(),targets).await?;
 
         let (order_tx, mut order_rx) = channel::<Order>(100);
 
@@ -82,16 +80,17 @@ impl TradingManager {
                 while let Ok(tick) = tick_rx.recv().await {
                     let mut strategy = strategy.lock().await;
                     let id = strategy.get_id();
+                    println!("tick: {}",tick)
 
-                    if let Ok(positions) = broker.get_positions().await {
-                        if let Some(position) = positions.iter().find(|p| p.strategy_id == id) {
-                            if let Some(order) = strategy.evaluate_tick(&tick, Some(position)).await {
-                                if order_tx.send(order).await.is_ok() {
-                                    info!("Order sent: {}", id);
-                                }
-                            }
-                        }
-                    }
+                    // if let Ok(positions) = broker.get_positions().await {
+                    //     if let Some(position) = positions.iter().find(|p| p.strategy_id == id) {
+                    //         if let Some(order) = strategy.evaluate_tick(&tick, Some(position)).await {
+                    //             if order_tx.send(order).await.is_ok() {
+                    //                 info!("Order sent: {}", id);
+                    //             }
+                    //         }
+                    //     }
+                    // }
                 }
             });
         }

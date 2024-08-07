@@ -31,7 +31,7 @@ pub struct OrderResult {
 #[async_trait]
 pub trait MarketAPI: Send + Sync {
     async fn get_tickers(&self) -> anyhow::Result<HashMap<String, Market>>;
-    async fn subscribe(&self, ticker: &str) -> anyhow::Result<()>;
+    async fn subscribe(&self, ticker: String) -> anyhow::Result<()>;
     async fn get_balance(&self) -> anyhow::Result<i64>;
     async fn get_positions(&self) -> anyhow::Result<Vec<Position>>;
     async fn order_cancel(&self, order: Order) -> anyhow::Result<()>;

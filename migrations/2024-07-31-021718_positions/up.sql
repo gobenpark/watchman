@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.positions
     price   double precision NOT NULL,
     amount     double precision NOT NULL,
     strategy_id varchar(10) NOT NULL,
-    created_at timestamp NOT NULL
+    created_at timestamp NOT NULL default now()
 );
 
 
