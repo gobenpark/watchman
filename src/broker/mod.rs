@@ -32,14 +32,12 @@ type DbPool = Pool<AsyncPgConnection>;
 pub struct Broker{
     api: Box<dyn MarketAPI>,
     repository: Arc<Repository>,
-    cache_position: Cache<String, Vec<Position>>,
 }
 
 
 impl Broker {
     pub fn new(api: Box<dyn MarketAPI>, repository: Arc<Repository>) -> Self {
-        let cache = Cache::new(10_000);
-        Self {api,repository,cache_position: cache}
+        Self {api,repository}
     }
 
     pub async fn transaction(&self,ctx: CancellationToken,target: Vec<String>) -> Result<Receiver<Tick>> {
@@ -116,20 +114,26 @@ impl Broker {
 
     async fn update_position(&self,o: Order) -> Result<Position>{
         let mut po = self.repository.get_position(o.ticker().to_string(), o.strategy_id().to_string()).await?;
-        let total = po.quantity + o.quantity as f64;
-        let avg_price = (po.price * po.quantity + o.price * o.quantity as f64) / total;
-        po.quantity = total;
-        po.price = avg_price;
-        self.repository.update_position(po).await
+        match po {
+            Some(mut p) => {
+                let total = p.quantity + o.quantity as f64;
+                let avg_price = (p.price * p.quantity + o.price * o.quantity as f64) / total;
+                p.quantity = total;
+                p.price = avg_price;
+                self.repository.update_position(p).await
+            }
+            None => {
+                Err(anyhow::Error::msg("No position found"))
+            }
+        }
+
     }
 
-    pub async fn execute_order(&self, o: Order) -> Result<Order> {
-        let to = o.clone();
+    pub async fn execute_order(&self, o: NewOrder) -> Result<NewOrder> {
         match self.api.order(o).await {
-            Ok(order) => {
+            Ok(mut order) => {
                 info!("Order executed: {:?}", order);
-                let no = NewOrder::from(to);
-                self.repository.add_order(no).await?;
+                self.repository.add_order(order.clone()).await?;
                 Ok(order)
             }
             Err(e) => {

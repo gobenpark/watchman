@@ -1,8 +1,10 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 use diesel_async::pooled_connection::deadpool::Pool;
+use moka::future::Cache;
+use tokio::sync::OnceCell;
 use crate::schema::orders::dsl::orders;
 use crate::model::prelude::*;
 
@@ -10,20 +12,47 @@ type DbPool = Pool<AsyncPgConnection>;
 
 pub struct Repository {
     pool: DbPool,
+    cache_position: OnceCell<Cache<String, Position>>,
 }
 
 impl Repository {
     pub fn new(database_url: String) -> Self {
         let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url);
         let pool = Pool::builder(config).build().expect("fail to create pool builder");
-        Self { pool }
+        Self { pool , cache_position: OnceCell::new()}
     }
 
-    pub async fn get_position(&self,ticker: String, strategy_id: String) -> Result<Position> {
-        use crate::schema::positions::dsl::*;
-        let conn = &mut self.pool.get().await?;
-        let po = positions.select(Position::as_select()).filter(ticker.eq(ticker)).filter(strategy_id.eq(strategy_id)).first::<Position>(conn).await?;
-        Ok(po)
+    fn cache_key(ticker: &str, strategy_id: &str) -> String {
+        format!("{}:{}", ticker, strategy_id)
+    }
+
+    async fn init_cache(&self) -> Result<&Cache<String,Position>> {
+        let cache = self.cache_position.get_or_init(|| async {
+            let cache = Cache::new(10_000);
+            use crate::schema::positions::dsl::*;
+            let conn = &mut self.pool.get().await.expect("Failed to get DB connection");
+            let all_positions: Vec<Position> = positions
+                .select(Position::as_select())
+                .load(conn)
+                .await
+                .expect("Failed to load positions");
+
+            for position in all_positions {
+                let key = Self::cache_key(&position.ticker, &position.strategy_id);
+                cache.insert(key, position).await;
+            }
+            cache
+        }).await;
+        Ok(cache)
+    }
+
+    pub async fn get_position(&self,tk: String, stg: String) -> Result<Option<Position>> {
+        let cache = self.init_cache().await?;
+        let cache_key = Self::cache_key(&tk, &stg);
+        if let Some(position) = cache.get(&cache_key).await {
+            return Ok(Some(position));
+        }
+        Ok(None)
     }
 
     pub async fn update_position(&self, po: Position) -> Result<Position> {
@@ -33,6 +62,9 @@ impl Repository {
             .set(&po)
             .returning(Position::as_returning())
             .get_result(conn).await?;
+        let cache = self.init_cache().await?;
+        let cache_key = Self::cache_key(&po.ticker, &po.strategy_id);
+        cache.insert(cache_key, po.clone()).await;
         Ok(po)
     }
 
@@ -111,7 +143,6 @@ mod test {
     async fn test_order() {
         let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
         repo.add_order(NewOrder {
-            id: 2,
             ticker: "005930".to_string(),
             quantity: 1,
             price: 1.0,
@@ -127,22 +158,5 @@ mod test {
         let data = repo.accept_order(2).await.unwrap();
         println!("{:?}",data);
     }
-
-    #[tokio::test]
-    async fn test_get_position(){
-        let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
-        let mut data = repo.get_position("005930".to_string(),"sample".to_string()).await.unwrap();
-        data.ticker = "005935".to_string();
-        let data = repo.update_position(data).await;
-        println!("{:?}",data);
-    }
-
-    #[tokio::test]
-    async fn test_get_dailycap(){
-        let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
-        let data = repo.get_daily_caps().await.unwrap();
-        println!("{:?}",data);
-    }
-
 
 }

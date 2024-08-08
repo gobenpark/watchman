@@ -17,6 +17,7 @@ use tokio_stream::StreamExt;
 use tokio_util::io::StreamReader;
 use tonic::codegen::Body;
 use crate::model::order::Order;
+use crate::model::prelude::NewOrder;
 use crate::repository::Repository;
 
 pub struct TradingManager {
@@ -45,14 +46,13 @@ impl TradingManager {
 
     pub async fn run(&self) -> Result<()> {
 
-        let targets = self.get_all_targets().await?;
-        let (mut tx, mut rx) = tokio::sync::broadcast::channel::<Tick>(100);
+        let (mut tx, mut rx) = tokio::sync::broadcast::channel::<Tick>(10000000);
         let cancel = CancellationToken::new();
         self.broker.process_order(cancel.clone()).await?;
         let targets = self.get_all_targets().await?;
         let socket = self.broker.transaction(cancel.clone(),targets).await?;
 
-        let (order_tx, mut order_rx) = channel::<Order>(100);
+        let (order_tx, mut order_rx) = channel::<NewOrder>(10000000);
 
         self.handle_socket_messages(socket, tx.clone()).await;
         self.spawn_strategy_handlers(tx, order_tx.clone()).await;
@@ -70,36 +70,45 @@ impl TradingManager {
         });
     }
 
-    async fn spawn_strategy_handlers(&self, tx: tokio::sync::broadcast::Sender<Tick>, order_tx: tokio::sync::mpsc::Sender<Order>) {
+    async fn spawn_strategy_handlers(&self, tx: tokio::sync::broadcast::Sender<Tick>, order_tx: tokio::sync::mpsc::Sender<NewOrder>) {
         for strategy in self.strategies.iter().cloned() {
             let mut tick_rx = tx.subscribe();
             let order_tx = order_tx.clone();
             let broker = self.broker.clone();
+            let repo = self.repository.clone();
+
 
             tokio::spawn(async move {
                 while let Ok(tick) = tick_rx.recv().await {
                     let mut strategy = strategy.lock().await;
                     let id = strategy.get_id();
-                    println!("tick: {}",tick)
-
-                    // if let Ok(positions) = broker.get_positions().await {
-                    //     if let Some(position) = positions.iter().find(|p| p.strategy_id == id) {
-                    //         if let Some(order) = strategy.evaluate_tick(&tick, Some(position)).await {
-                    //             if order_tx.send(order).await.is_ok() {
-                    //                 info!("Order sent: {}", id);
-                    //             }
-                    //         }
-                    //     }
-                    // }
+                    let po = {
+                        if let Ok(position) = repo.get_position(tick.ticker.clone(),id).await {
+                            position
+                        }else{
+                            None
+                        }
+                    };
+                    match strategy.evaluate_tick(&tick,po).await {
+                        Ok(Some(order)) => {
+                            if order_tx.send(order).await.is_ok() {
+                                info!("Order sent: ");
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            error!("Failed to evaluate tick: {}", e);
+                        }
+                    }
                 }
             });
         }
     }
 
-    async fn handle_orders(&self, mut order_rx: tokio::sync::mpsc::Receiver<Order>) {
+    async fn handle_orders(&self, mut order_rx: tokio::sync::mpsc::Receiver<NewOrder>) {
         while let Some(order) = order_rx.recv().await {
             match self.broker.execute_order(order.clone()).await {
-                Ok(_) => info!("Order executed: {}", order.ticker()),
+                Ok(_) => info!("Order executed: {}", order.ticker),
                 Err(e) => error!("Failed to execute order: {}", e),
             }
         }

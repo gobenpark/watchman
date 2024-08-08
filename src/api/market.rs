@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
-use crate::model::order::{Order,OrderAction,OrderType};
+use crate::model::order::{NewOrder, Order, OrderAction, OrderType};
 use crate::model::market::Market;
 use crate::model::position::Position;
 use crate::model::tick::Tick;
@@ -42,8 +42,8 @@ pub trait MarketAPI: Send + Sync {
     ) -> anyhow::Result<Receiver<Tick>>;
     async fn order(
         &self,
-        order: Order,
-    ) -> anyhow::Result<Order>;
+        order: NewOrder,
+    ) -> anyhow::Result<NewOrder>;
     async fn connect_websocket_order_transaction(
         &self,
         token: CancellationToken,

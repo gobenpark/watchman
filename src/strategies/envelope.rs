@@ -1,14 +1,19 @@
+use std::future;
 use crate::model::tick::Tick;
 use crate::model::position::Position;
 use crate::strategies::strategy_base::Strategy;
-use crate::model::order::Order;
 use anyhow::Result;
 use async_trait::async_trait;
+use log::info;
 use pyo3::prelude::*;
 use pyo3::{Py, PyAny, PyResult, Python};
+use tokio::sync::OnceCell;
+use crate::model::prelude::*;
+
 
 pub struct Envelope {
     app: Py<PyAny>,
+    targets: OnceCell<Vec<String>>
 }
 
 impl Envelope {
@@ -25,7 +30,7 @@ impl Envelope {
                 .into()
         });
 
-        Self { app }
+        Self { app ,targets: OnceCell::new()}
     }
 }
 
@@ -47,68 +52,67 @@ impl Strategy for Envelope {
     async fn evaluate_tick(
         &self,
         tick: &Tick,
-        position: Option<&Position>,
-    ) -> Option<Order> {
-        // let symbol = &tick.ticker;
-        // let price: f64 = tick.price.parse()?;
-        //
-        // match position {
-        //     Some(p) => {
-        //         let sell = Python::with_gil(|py| -> PyResult<bool> {
-        //             let instance = self.app.call0(py)?;
-        //             let target: bool = instance
-        //                 .call_method1(py, "sell", (symbol, price, p.price()))?
-        //                 .extract(py)?;
-        //             Ok(target)
-        //         })?;
-        //
-        //         Err(anyhow::anyhow!("Not implemented"))
-        //         // if sell {
-        //         //     return Ok(OrderDecision {
-        //         //         order_type: OrderType::Sell,
-        //         //         symbol: tick.ticker.clone(),
-        //         //         quantity: 1,
-        //         //         price: price,
-        //         //         reason: "Buy signal detected".to_string(),
-        //         //     });
-        //         // }
-        //         // Ok(OrderDecision {
-        //         //     order_type: OrderType::Hold,
-        //         //     symbol: tick.ticker.clone(),
-        //         //     quantity: 1,
-        //         //     price: price,
-        //         //     reason: "Hold signal detected".to_string(),
-        //         // })
-        //     }
-        //     None => {
-        //         let buy = Python::with_gil(|py| -> PyResult<bool> {
-        //             let instance = self.app.call0(py)?;
-        //             let target: bool = instance
-        //                 .call_method1(py, "buy", (symbol, price))?
-        //                 .extract(py)?;
-        //             Ok(target)
-        //         })?;
-        //
-        //         // if buy {
-        //         //     return Ok(OrderDecision {
-        //         //         order_type: OrderType::Buy,
-        //         //         symbol: tick.ticker.clone(),
-        //         //         quantity: 1,
-        //         //         price: price,
-        //         //         reason: "Buy signal detected".to_string(),
-        //         //     });
-        //         // }
-        //         // Ok(OrderDecision {
-        //         //     order_type: OrderType::Hold,
-        //         //     symbol: tick.ticker.clone(),
-        //         //     quantity: 1,
-        //         //     price: price,
-        //         //     reason: "Hold signal detected".to_string(),
-        //         // })
-        //         Err(anyhow::anyhow!("Not implemented"))
-        //     }
-        // }
-        None
+        position: Option<Position>,
+    ) -> Result<Option<NewOrder>> {
+
+        let targets = self.targets.get_or_init(|| future::ready(self.get_targets())).await;
+        //check if ticker target exist
+        if !targets.contains(&tick.ticker) {
+            info!("position found tick: {}",tick);
+            return Ok(None);
+        }
+
+
+
+
+        let symbol = &tick.ticker;
+        let price: f64 = tick.price.parse()?;
+
+        match position {
+            Some(p) => {
+                let sell = Python::with_gil(|py| -> PyResult<bool> {
+                    let instance = self.app.call0(py)?;
+                    let target: bool = instance
+                        .call_method1(py, "sell", (symbol, price, p.price))?
+                        .extract(py)?;
+                    Ok(target)
+                })?;
+
+                if sell {
+                    info!("position found tick: {}",tick);
+                    return Ok(Some(NewOrder{
+                        id: 0,
+                        ticker: tick.ticker.clone(),
+                        quantity: 1,
+                        price,
+                        strategy_id: "".to_string(),
+                        action: OrderAction::Sell,
+                        order_type: OrderType::Market,
+                    }))
+                }
+            }
+            None => {
+                let buy = Python::with_gil(|py| -> PyResult<bool> {
+                    let instance = self.app.call0(py)?;
+                    let target: bool = instance
+                        .call_method1(py, "buy", (symbol, price))?
+                        .extract(py)?;
+                    Ok(target)
+                })?;
+                if buy {
+                    return Ok(Some(NewOrder{
+                        id: 0,
+                        ticker: tick.ticker.clone(),
+                        quantity: 1,
+                        price,
+                        strategy_id: "".to_string(),
+                        action: OrderAction::Buy,
+                        order_type: OrderType::Market,
+                    }))
+                }
+            }
+        }
+        Ok(None)
     }
 }
 

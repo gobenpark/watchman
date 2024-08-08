@@ -32,7 +32,7 @@ use tracing::{error, info};
 use crate::api::market::{MarketAPI, OrderResult,OrderResultType};
 use crate::broker;
 use crate::model::position::Position;
-use crate::model::order::{Order,OrderAction,OrderType};
+use crate::model::order::{NewOrder, Order, OrderAction, OrderType};
 use crate::model::tick::Tick;
 use crate::model::market::Market;
 
@@ -255,7 +255,7 @@ impl MarketAPI for LsSecClient {
                             tx.send(message).await.unwrap();
                         },
                         None => {
-                            info!("does not tick data")
+                            info!("receive transaction none")
                         }
                     }
 
@@ -413,11 +413,11 @@ impl MarketAPI for LsSecClient {
 
     async fn order(
         &self,
-        mut order: Order,
-    ) -> Result<Order> {
+        mut order: NewOrder,
+    ) -> Result<NewOrder> {
         let body = serde_json::json!({
             "CSPAT00601InBlock1": {
-                "IsuNo": format!("A{}", order.ticker()),
+                "IsuNo": format!("A{}", order.ticker),
                 "OrdQty": order.quantity,
                 "OrdPrc": || -> i64 {
                     match order.order_type {
@@ -439,7 +439,8 @@ impl MarketAPI for LsSecClient {
             .and_then(|block| block.get("OrdNo"))
             .and_then(|ord_no| ord_no.as_i64())
             .context("Failed to get order number")?;
-        order.set_id(id as i32);
+
+        order.id = id as i32;
         Ok(order)
     }
 }

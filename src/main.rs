@@ -42,9 +42,7 @@ async fn main() -> Result<()> {
     let broker = Arc::new(Broker::new(Box::new(client), repository.clone()));
     let mut manager = TradingManager::new(broker, repository.clone());
     let envelope = Envelope::new();
-    let sample = strategies::sample::SampleStrategy::new();
     manager.add_strategy(Box::new(envelope));
-    manager.add_strategy(Box::new(sample));
 
     tokio::select! {
         result = manager.run() => {

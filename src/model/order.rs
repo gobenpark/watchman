@@ -81,7 +81,7 @@ impl OrderType {
     }
 }
 
-#[derive(Insertable,Debug,)]
+#[derive(Insertable,Debug,Clone)]
 #[diesel(table_name = crate::schema::orders)]
 pub struct NewOrder {
     pub id: i32,
