@@ -91,9 +91,7 @@ impl TradingManager {
                     };
                     match strategy.evaluate_tick(&tick,po).await {
                         Ok(Some(order)) => {
-                            if order_tx.send(order).await.is_ok() {
-                                info!("Order sent: ");
-                            }
+                            order_tx.send(order).await;
                         }
                         Ok(None) => {}
                         Err(e) => {

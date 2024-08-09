@@ -79,13 +79,12 @@ impl Strategy for Envelope {
                 })?;
 
                 if sell {
-                    info!("position found tick: {}",tick);
                     return Ok(Some(NewOrder{
                         id: 0,
                         ticker: tick.ticker.clone(),
                         quantity: 1,
                         price,
-                        strategy_id: "".to_string(),
+                        strategy_id: self.get_id(),
                         action: OrderAction::Sell,
                         order_type: OrderType::Market,
                     }))
@@ -105,9 +104,9 @@ impl Strategy for Envelope {
                         ticker: tick.ticker.clone(),
                         quantity: 1,
                         price,
-                        strategy_id: "".to_string(),
+                        strategy_id: self.get_id(),
                         action: OrderAction::Buy,
-                        order_type: OrderType::Market,
+                        order_type: OrderType::Limit,
                     }))
                 }
             }

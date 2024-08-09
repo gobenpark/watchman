@@ -434,14 +434,25 @@ impl MarketAPI for LsSecClient {
         });
 
         let result = self.api_call("/stock/order", "CSPAT00601", &body).await?;
-        let id = result
-            .get("CSPAT00601OutBlock2")
-            .and_then(|block| block.get("OrdNo"))
-            .and_then(|ord_no| ord_no.as_i64())
-            .context("Failed to get order number")?;
-
-        order.id = id as i32;
-        Ok(order)
+        let result_cloned = result.clone();
+        let rsp_cd = result.get("rsp_cd").and_then(|block| block.as_str());
+        match rsp_cd{
+            Some("08677") => {
+                return Err(anyhow::anyhow!("not enough money: {}", result_cloned));
+            },
+            Some("00040") => {
+                let id = result
+                    .get("CSPAT00601OutBlock2")
+                    .and_then(|block| block.get("OrdNo"))
+                    .and_then(|ord_no| ord_no.as_i64())
+                    .context(format!("Failed to get order number: {}",result_cloned))?;
+                order.id = id as i32;
+                return Ok(order)
+            },
+            None | _ => {
+                return Err(anyhow::anyhow!("Failed to get response code: {}", result_cloned));
+            }
+        }
     }
 }
 
