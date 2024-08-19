@@ -3,10 +3,14 @@ use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 use diesel_async::pooled_connection::deadpool::Pool;
+use futures_util::future::lazy;
 use moka::future::Cache;
 use tokio::sync::OnceCell;
 use crate::schema::orders::dsl::orders;
 use crate::model::prelude::*;
+use polars::prelude::*;
+use polars::series::Series;
+use serde::de::Unexpected::Char;
 
 type DbPool = Pool<AsyncPgConnection>;
 
@@ -118,6 +122,72 @@ impl Repository {
         Ok(dc)
     }
 
+    pub async fn get_ohlcv(&self) -> Result<DataFrame> {
+        use crate::schema::charts::dsl::*;
+        let conn = &mut self.pool.get().await?;
+        let dc = charts.select(Charts::as_select()).load(conn).await?;
+
+        let df = DataFrame::new(vec![
+           Series::new("ticker",dc.iter().map(|x| x.ticker.clone()).collect::<Vec<String>>()),
+           Series::new("open",dc.iter().map(|x| x.open.clone()).collect::<Vec<f64>>()),
+           Series::new("close",dc.iter().map(|x| x.close.clone()).collect::<Vec<f64>>()),
+           Series::new("high",dc.iter().map(|x| x.high.clone()).collect::<Vec<f64>>()),
+           Series::new("low",dc.iter().map(|x| x.low.clone()).collect::<Vec<f64>>()),
+           Series::new("volume",dc.iter().map(|x| x.volume.clone()).collect::<Vec<i32>>()),
+           Series::new("datetime",dc.iter().map(|x| x.datetime.clone()).collect::<Vec<chrono::NaiveDateTime>>()),
+        ])?;
+
+        // col("close").rolling_mean(RollingOptionsFixedWindow{
+        //     window_size: 20,
+        //     min_periods: 1,
+        //     weights: None,
+        //     center: false,
+        //     fn_params: None,
+        // }).alias("rolling_mean").clone()
+        let result = df.clone().lazy().filter(col("ticker").eq(lit("005930"))).select([
+            col("ticker"),
+            col("close").rolling_mean(RollingOptionsFixedWindow{
+                window_size: 20,
+                min_periods: 20,
+                weights: None,
+                center: false,
+                fn_params: None,
+            }),
+            col("datetime")
+        ]).collect();
+
+        println!("{:?}",result);
+        // let result = df.select([
+        //     (col("close").rolling_mean(RollingOptionsFixedWindow{
+        //         window_size: 20,
+        //         min_periods: 1,
+        //         weights: None,
+        //         center: false,
+        //         fn_params: None,
+        //     }).alias("rolling_mean"))
+        // ])?;
+
+
+
+
+        // tdf.with_column(ma20.rename("ma20"))?;
+
+        // // 20일 이동평균 계산
+        // let ma20 = df.select("close")?
+        //     .to_series()
+        //     .cast(&DataType::Float64)?
+        //     .rolling_mean(20, RollingOptions {
+        //         window_size: WindowSize::Fixed(20),
+        //         min_periods: 1,
+        //         center: false,
+        //         weights: None,
+        //     })?;
+        //
+        // // 이동평균 열 추가
+        // df.with_column(ma20.rename("ma20"))?;
+
+        Ok(df)
+    }
 }
 
 #[cfg(test)]
@@ -138,25 +208,19 @@ mod test {
         let posi = repo.add_position(po).await.unwrap();
         println!("{:?}",posi);
     }
-
-    #[tokio::test]
-    async fn test_order() {
-        let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
-        repo.add_order(NewOrder {
-            ticker: "005930".to_string(),
-            quantity: 1,
-            price: 1.0,
-            strategy_id: "sample".to_string(),
-            action: OrderAction::Buy,
-            order_type: OrderType::Limit,
-        }).await.expect("error");
-    }
-
     #[tokio::test]
     async fn test_accept_order() {
         let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
         let data = repo.accept_order(2).await.unwrap();
         println!("{:?}",data);
     }
+
+    #[tokio::test]
+    async fn test_cap() {
+        let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
+        let data = repo.get_ohlcv().await.unwrap();
+        println!("{:?}",data);
+    }
+
 
 }
