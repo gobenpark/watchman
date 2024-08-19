@@ -1,13 +1,10 @@
-use std::fmt::Display;
-use std::io::Write;
-use diesel::deserialize::FromSql;
 use diesel::{AsExpression, deserialize, FromSqlRow, serialize};
+use diesel::deserialize::FromSql;
 use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
-use diesel::serialize::{IsNull, Output, ToSql};
-use diesel::sql_types::{Integer, VarChar};
-use tokio::io::AsyncReadExt;
-use byteorder::{NetworkEndian, ReadBytesExt};
+use diesel::serialize::{Output, ToSql};
+use diesel::sql_types::Integer;
+
 #[derive(Copy, Clone, Debug,FromSqlRow, AsExpression)]
 #[diesel(sql_type = Integer)]
 pub enum OrderAction {

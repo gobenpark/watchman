@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
-use crate::model::order::{NewOrder, Order, OrderAction, OrderType};
+use crate::model::order::{NewOrder, Order};
 use crate::model::market::Market;
 use crate::model::position::Position;
 use crate::model::tick::Tick;

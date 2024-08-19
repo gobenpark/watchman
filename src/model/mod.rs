@@ -4,3 +4,4 @@ pub mod tick;
 pub mod market;
 pub mod daily_cap;
 pub mod prelude;
+pub mod charts;

@@ -1,7 +1,6 @@
 use diesel::{Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
 use diesel::prelude::*;
-use diesel::SelectableHelper;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[derive(Selectable, Queryable,AsChangeset, Debug)]

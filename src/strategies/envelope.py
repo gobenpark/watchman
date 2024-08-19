@@ -41,6 +41,7 @@ class Envolope:
         start = datetime.now() - relativedelta(years=1)
         tk = self.get_top100_amount_ticker(end)
         items = []
+
         for i in tk:
             df = fdr.DataReader(i, start, end)
             df['prev_close'] = df['Close'].shift(1)
@@ -58,7 +59,6 @@ class Envolope:
                 if 2 > v:
                     items.append([i, stock.get_market_ticker_name(i)])
             self.dfs[i] = df
-        print(items)
         return [i[0] for i in items]
 
     def buy(self, ticker, current_price) -> bool:

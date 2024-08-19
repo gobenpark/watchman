@@ -1,38 +1,26 @@
-use std::collections::{HashMap, VecDeque};
-use std::ffi::CString;
-use std::fmt::{Debug, Display, Formatter};
-use std::ops::Deref;
+use std::collections::{HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Once};
-use std::thread::sleep;
-use std::{fmt, time};
+use std::sync::{Arc};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use diesel::row::NamedRow;
 use futures_util::stream::SplitSink;
-use futures_util::{future, pin_mut, FutureExt, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use futures_util::{SinkExt, StreamExt};
 use moka::future::Cache;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::sync::OnceCell;
-use tokio::sync::{broadcast, mpsc};
-use tokio_tungstenite::tungstenite::handshake::client::generate_key;
-use tokio_tungstenite::tungstenite::http;
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{info};
 use crate::api::market::{MarketAPI, OrderResult,OrderResultType};
-use crate::broker;
 use crate::model::position::Position;
-use crate::model::order::{NewOrder, Order, OrderAction, OrderType};
+use crate::model::order::{NewOrder, Order, OrderType};
 use crate::model::tick::Tick;
 use crate::model::market::Market;
 
@@ -184,7 +172,7 @@ impl MarketAPI for LsSecClient {
         token: CancellationToken,
     ) -> Result<Receiver<OrderResult>> {
         let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
-        let (mut write, mut read) = ws_stream.split();
+        let (mut write, read) = ws_stream.split();
 
         for i in &["SC0", "SC1", "SC2", "SC3", "SC4"] {
             write
@@ -272,7 +260,7 @@ impl MarketAPI for LsSecClient {
 
     async fn connect_websocket(&self, token: CancellationToken) -> Result<Receiver<Tick>> {
         let (ws_stream, _) = connect_async("wss://openapi.ls-sec.co.kr:9443/websocket").await?;
-        let (write, mut read) = ws_stream.split();
+        let (write, read) = ws_stream.split();
         *self.ws_sender.lock().await = Some(write);
 
         let (tx, rx) = channel::<Tick>(100);
@@ -311,9 +299,9 @@ impl MarketAPI for LsSecClient {
     }
 
     async fn subscribe(&self, ticker: String) -> Result<()> {
-        let mut channels = self.tick_channels.lock().await;
+        let channels = self.tick_channels.lock().await;
         if !channels.contains_key(&ticker) {
-            let mut sender = self.ws_sender.lock().await;
+            let sender = self.ws_sender.lock().await;
             if sender.is_none() {
                 return Err(anyhow::Error::msg("No websocket connection"));
             }
@@ -459,7 +447,6 @@ impl MarketAPI for LsSecClient {
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures_util::future::join_all;
 
     static KEY: &str = "PSA0cTqjeDE2hoNUclL2tiHgOLLQwzdkX43e";
     static SECRET: &str = "H0jIqEYl6cqNGr7CyyfHfN2Ns1hPiRR7";
@@ -496,7 +483,7 @@ mod test {
 
     #[tokio::test]
     async fn test_get_tickers() {
-        let mut client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
+        let client = LsSecClient::new(KEY.to_string(), SECRET.to_string());
         let map = client.get_tickers().await;
         let map = client.get_tickers().await;
         let map = client.get_tickers().await;
@@ -539,7 +526,7 @@ mod test {
         let mut sockets = client.connect_websocket(tk).await.unwrap();
 
         let subsclient = client.clone();
-        tokio::spawn(async move { subsclient.subscribe("005930").await.unwrap() });
+        tokio::spawn(async move { subsclient.subscribe("005930".to_string()).await.unwrap() });
 
         while let Some(tick) = sockets.recv().await {
             println!("{:?}", tick)

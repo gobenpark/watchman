@@ -1,7 +1,3 @@
-use anyhow::Result;
-use async_trait::async_trait;
-use std::collections::HashMap;
-
 // 예시 데이터 구조
 pub struct MarketData {
     pub symbol: String,
@@ -49,12 +45,13 @@ impl DataManager {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use spider::configuration::WaitForIdleNetwork;
     use spider::tokio;
     use spider::website::Website;
-    use std::default::Default;
-    use std::time::Duration;
     use tokio::time::Instant;
+
     #[tokio::test]
     async fn test_data() {
         let mut website: Website = Website::new("https://rsseau.fr")

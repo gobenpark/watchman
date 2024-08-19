@@ -29,11 +29,11 @@ diesel::table! {
     charts (ticker, datetime) {
         #[max_length = 10]
         ticker -> Varchar,
-        open -> Nullable<Float8>,
-        high -> Nullable<Float8>,
-        low -> Nullable<Float8>,
-        close -> Nullable<Float8>,
-        volume -> Nullable<Int4>,
+        open -> Float8,
+        high -> Float8,
+        low -> Float8,
+        close -> Float8,
+        volume -> Int4,
         datetime -> Timestamp,
     }
 }

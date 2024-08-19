@@ -1,7 +1,6 @@
 use crate::model::position::Position;
 use crate::model::tick::Tick;
 use async_trait::async_trait;
-use std::fmt::Display;
 use crate::model::prelude::*;
 use anyhow::Result;
 

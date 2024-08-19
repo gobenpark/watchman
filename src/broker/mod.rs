@@ -1,16 +1,9 @@
-use std::fmt::Display;
 use std::sync::Arc;
 
 use anyhow::Result;
-use chrono::Duration;
-use diesel::{Insertable, PgConnection};
-use diesel::prelude::*;
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use diesel_async::pooled_connection::{AsyncDieselConnectionManager, deadpool};
-use diesel_async::pooled_connection::deadpool::{Object, Pool};
-use diesel_async::scoped_futures::ScopedFutureExt;
+use diesel_async::{AsyncPgConnection};
+use diesel_async::pooled_connection::deadpool::{Pool};
 use log::info;
-use moka::future::Cache;
 use tokio::select;
 use tokio::sync::mpsc::{channel, Receiver};
 use tokio_util::sync::CancellationToken;
@@ -18,16 +11,12 @@ use tracing::error;
 use crate::api::market::OrderResultType;
 
 use crate::api::market::MarketAPI;
-use crate::model::order::{Order, OrderAction, NewOrder, OrderType};
+use crate::model::order::{Order, NewOrder};
 use crate::model::position::Position;
 use crate::model::tick::Tick;
 use crate::repository::Repository;
-use crate::schema::orders::dsl::*;
-use crate::schema::positions::dsl as positiondsl;
-use crate::schema::positions::dsl::positions;
 
 
-type DbPool = Pool<AsyncPgConnection>;
 
 pub struct Broker{
     api: Box<dyn MarketAPI>,
@@ -77,7 +66,7 @@ impl Broker {
                             let oid = v.id.parse::<i32>().unwrap();
                             let result = repo.accept_order(oid).await;
                             match result {
-                                Ok(od) => {
+                                Ok(_) => {
                                     info!("Order accepted: {}", v.id);
                                 }
                                 Err(e) => {
@@ -113,7 +102,7 @@ impl Broker {
 
 
     async fn update_position(&self,o: Order) -> Result<Position>{
-        let mut po = self.repository.get_position(o.ticker().to_string(), o.strategy_id().to_string()).await?;
+        let po = self.repository.get_position(o.ticker().to_string(), o.strategy_id().to_string()).await?;
         match po {
             Some(mut p) => {
                 let total = p.quantity + o.quantity as f64;
@@ -131,7 +120,7 @@ impl Broker {
 
     pub async fn execute_order(&self, o: NewOrder) -> Result<NewOrder> {
         match self.api.order(o).await {
-            Ok(mut order) => {
+            Ok(order) => {
                 info!("Order executed: {:?}", order);
                 self.repository.add_order(order.clone()).await?;
                 Ok(order)

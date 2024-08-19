@@ -1,22 +1,12 @@
 use crate::broker;
 use crate::strategies::strategy_base::Strategy;
-use anyhow::{Context, Result};
-use async_trait::async_trait;
-use futures::future::join_all;
-use std::collections::HashSet;
+use anyhow::{Result};
 use std::sync::Arc;
-use diesel::serialize::ToSql;
-use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use crate::model::tick::Tick;
-use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
-use tokio_stream::StreamExt;
-use tokio_util::io::StreamReader;
-use tonic::codegen::Body;
-use crate::model::order::Order;
 use crate::model::prelude::NewOrder;
 use crate::repository::Repository;
 
@@ -40,19 +30,23 @@ impl TradingManager {
     }
 
     pub async fn get_all_targets(&self) -> Result<Vec<String>> {
-        let result = self.repository.get_daily_caps().await?.iter().map(|c| c.ticker.clone()).collect();
+        let result = self.repository.get_daily_caps().await?.iter()
+            .filter(|x|
+                x.trading_volume.as_ref()
+                    .map_or(false,|detail| detail.gt(&100_000_000_000))
+            ).map(|c| c.ticker.clone()).collect();
         Ok(result)
     }
 
     pub async fn run(&self) -> Result<()> {
 
-        let (mut tx, mut rx) = tokio::sync::broadcast::channel::<Tick>(10000000);
+        let (tx, _) = tokio::sync::broadcast::channel::<Tick>(10000000);
         let cancel = CancellationToken::new();
         self.broker.process_order(cancel.clone()).await?;
         let targets = self.get_all_targets().await?;
         let socket = self.broker.transaction(cancel.clone(),targets).await?;
 
-        let (order_tx, mut order_rx) = channel::<NewOrder>(10000000);
+        let (order_tx, order_rx) = channel::<NewOrder>(10000000);
 
         self.handle_socket_messages(socket, tx.clone()).await;
         self.spawn_strategy_handlers(tx, order_tx.clone()).await;
@@ -80,7 +74,7 @@ impl TradingManager {
 
             tokio::spawn(async move {
                 while let Ok(tick) = tick_rx.recv().await {
-                    let mut strategy = strategy.lock().await;
+                    let strategy = strategy.lock().await;
                     let id = strategy.get_id();
                     let po = {
                         if let Ok(position) = repo.get_position(tick.ticker.clone(),id).await {

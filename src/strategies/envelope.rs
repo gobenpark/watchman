@@ -119,9 +119,6 @@ impl Strategy for Envelope {
 mod test {
     use super::*;
     use polars::prelude::*;
-    use polars_lazy::prelude::*;
-    use polars_sql::*;
-    use std::env;
     #[test]
     fn test_envelope() {
         let env = Envelope::new();

@@ -1,16 +1,15 @@
-use anyhow::{Context, Result};
+use anyhow::{Result};
 use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 use diesel_async::pooled_connection::deadpool::Pool;
-use futures_util::future::lazy;
 use moka::future::Cache;
-use tokio::sync::OnceCell;
-use crate::schema::orders::dsl::orders;
-use crate::model::prelude::*;
 use polars::prelude::*;
 use polars::series::Series;
-use serde::de::Unexpected::Char;
+use tokio::sync::OnceCell;
+
+use crate::model::prelude::*;
+use crate::schema::orders::dsl::orders;
 
 type DbPool = Pool<AsyncPgConnection>;
 
@@ -144,57 +143,39 @@ impl Repository {
         //     center: false,
         //     fn_params: None,
         // }).alias("rolling_mean").clone()
+
+
         let result = df.clone().lazy().filter(col("ticker").eq(lit("005930"))).select([
+            col("close").shift(Expr::from(1)).alias("prev_close"),
+            ((col("close")-col("close").shift(Expr::from(1))) / col("close").shift(Expr::from(1))).alias("diff"),
             col("ticker"),
+            col("close"),
+            col("close").rolling_mean(RollingOptionsFixedWindow{
+                window_size: 7,
+                min_periods: 7,
+                weights: None,
+                center: false,
+                fn_params: None,
+            }).alias("ma7"),
             col("close").rolling_mean(RollingOptionsFixedWindow{
                 window_size: 20,
                 min_periods: 20,
                 weights: None,
                 center: false,
                 fn_params: None,
-            }),
+            }).alias("ma20"),
             col("datetime")
         ]).collect();
 
         println!("{:?}",result);
-        // let result = df.select([
-        //     (col("close").rolling_mean(RollingOptionsFixedWindow{
-        //         window_size: 20,
-        //         min_periods: 1,
-        //         weights: None,
-        //         center: false,
-        //         fn_params: None,
-        //     }).alias("rolling_mean"))
-        // ])?;
-
-
-
-
-        // tdf.with_column(ma20.rename("ma20"))?;
-
-        // // 20일 이동평균 계산
-        // let ma20 = df.select("close")?
-        //     .to_series()
-        //     .cast(&DataType::Float64)?
-        //     .rolling_mean(20, RollingOptions {
-        //         window_size: WindowSize::Fixed(20),
-        //         min_periods: 1,
-        //         center: false,
-        //         weights: None,
-        //     })?;
-        //
-        // // 이동평균 열 추가
-        // df.with_column(ma20.rename("ma20"))?;
-
         Ok(df)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use diesel_async::RunQueryDsl;
-    use crate::model::order::{OrderAction, OrderType};
     use super::*;
+
     #[tokio::test]
     async fn test_crud_order() {
         let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
