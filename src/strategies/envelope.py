@@ -62,6 +62,7 @@ class Envolope:
         return [i[0] for i in items]
 
     def buy(self, ticker, current_price) -> bool:
+
         if ticker not in self.dfs:
             self.update_df(ticker)
         df = self.dfs[ticker]

@@ -37,7 +37,7 @@ impl Broker {
                 select! {
                     tk = receiver.recv() => {
                         if let Some(tk) = tk {
-                            tx.send(tk).await.unwrap()
+                            tx.send(tk).await.expect("send error")
                         }
                     }
                     _ = ctx.cancelled() => {
@@ -102,7 +102,7 @@ impl Broker {
 
 
     async fn update_position(&self,o: Order) -> Result<Position>{
-        let po = self.repository.get_position(o.ticker().to_string(), o.strategy_id().to_string()).await?;
+        let po = self.repository.get_position(o.ticker(), o.strategy_id().to_string()).await?;
         match po {
             Some(mut p) => {
                 let total = p.quantity + o.quantity as f64;

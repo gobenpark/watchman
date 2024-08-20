@@ -29,10 +29,10 @@ async fn main() -> Result<()> {
     let client = api::lssec::LsSecClient::new(key, secret);
     let pcli = Arc::new(client.clone());
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let repository = Arc::new(repository::Repository::new(database_url));
+    let repository = Arc::new(repository::Repository::new(database_url)?);
     let broker = Arc::new(Broker::new(Box::new(client), repository.clone()));
     let mut manager = TradingManager::new(broker, repository.clone());
-    let envelope = Envelope::new();
+    let envelope = Envelope::new(repository.clone());
     manager.add_strategy(Box::new(envelope));
 
     tokio::select! {

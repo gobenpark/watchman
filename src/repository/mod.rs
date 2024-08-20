@@ -1,37 +1,39 @@
-use anyhow::{Result};
-use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
-use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+use anyhow::{Context, Result};
+use diesel::{BoolExpressionMethods, ExpressionMethods, QueryDsl, SelectableHelper};
+use diesel::dsl::{exists, select};
 use diesel_async::pooled_connection::deadpool::Pool;
+use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use moka::future::Cache;
 use polars::prelude::*;
-use polars::series::Series;
 use tokio::sync::OnceCell;
 
 use crate::model::prelude::*;
-use crate::schema::orders::dsl::orders;
+
 
 type DbPool = Pool<AsyncPgConnection>;
 
+const CACHE_SIZE: u64 = 10_000;
+
 pub struct Repository {
     pool: DbPool,
-    cache_position: OnceCell<Cache<String, Position>>,
+    cache_position: OnceCell<Cache<(String, String), Position>>,
 }
 
 impl Repository {
-    pub fn new(database_url: String) -> Self {
+    pub fn new(database_url: String) -> Result<Self> {
         let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url);
-        let pool = Pool::builder(config).build().expect("fail to create pool builder");
-        Self { pool , cache_position: OnceCell::new()}
+        let pool = Pool::builder(config).build().context("fail to create pool builder")?;
+        Ok(Self { pool , cache_position: OnceCell::new()})
     }
 
-    fn cache_key(ticker: &str, strategy_id: &str) -> String {
-        format!("{}:{}", ticker, strategy_id)
+    fn cache_key(ticker: &str, strategy_id: &str) -> (String,String) {
+        (ticker.to_string(), strategy_id.to_string())
     }
 
-    async fn init_cache(&self) -> Result<&Cache<String,Position>> {
+    async fn init_cache(&self) -> Result<&Cache<(String,String),Position>> {
         let cache = self.cache_position.get_or_init(|| async {
-            let cache = Cache::new(10_000);
+            let cache = Cache::new(CACHE_SIZE);
             use crate::schema::positions::dsl::*;
             let conn = &mut self.pool.get().await.expect("Failed to get DB connection");
             let all_positions: Vec<Position> = positions
@@ -49,7 +51,7 @@ impl Repository {
         Ok(cache)
     }
 
-    pub async fn get_position(&self,tk: String, stg: String) -> Result<Option<Position>> {
+    pub async fn get_position(&self,tk: &str, stg: String) -> Result<Option<Position>> {
         let cache = self.init_cache().await?;
         let cache_key = Self::cache_key(&tk, &stg);
         if let Some(position) = cache.get(&cache_key).await {
@@ -82,6 +84,7 @@ impl Repository {
     }
 
     pub async fn add_order(&self,order: NewOrder) -> Result<()> {
+        use crate::schema::orders::dsl::orders;
         let conn = &mut self.pool.get().await?;
         diesel::insert_into(orders)
             .values(&order)
@@ -121,54 +124,30 @@ impl Repository {
         Ok(dc)
     }
 
-    pub async fn get_ohlcv(&self) -> Result<DataFrame> {
+    pub async fn get_ohlcv(&self,tk: &str) -> Result<Vec<Charts>> {
         use crate::schema::charts::dsl::*;
         let conn = &mut self.pool.get().await?;
-        let dc = charts.select(Charts::as_select()).load(conn).await?;
+        let query = charts.select(Charts::as_select());
+        let dc: Vec<Charts> = if tk.is_empty(){
+            query.load(conn).await?
+        }else {
+            query.filter(ticker.eq(tk)).load(conn).await?
+        };
+        Ok(dc)
+    }
 
-        let df = DataFrame::new(vec![
-           Series::new("ticker",dc.iter().map(|x| x.ticker.clone()).collect::<Vec<String>>()),
-           Series::new("open",dc.iter().map(|x| x.open.clone()).collect::<Vec<f64>>()),
-           Series::new("close",dc.iter().map(|x| x.close.clone()).collect::<Vec<f64>>()),
-           Series::new("high",dc.iter().map(|x| x.high.clone()).collect::<Vec<f64>>()),
-           Series::new("low",dc.iter().map(|x| x.low.clone()).collect::<Vec<f64>>()),
-           Series::new("volume",dc.iter().map(|x| x.volume.clone()).collect::<Vec<i32>>()),
-           Series::new("datetime",dc.iter().map(|x| x.datetime.clone()).collect::<Vec<chrono::NaiveDateTime>>()),
-        ])?;
-
-        // col("close").rolling_mean(RollingOptionsFixedWindow{
-        //     window_size: 20,
-        //     min_periods: 1,
-        //     weights: None,
-        //     center: false,
-        //     fn_params: None,
-        // }).alias("rolling_mean").clone()
-
-
-        let result = df.clone().lazy().filter(col("ticker").eq(lit("005930"))).select([
-            col("close").shift(Expr::from(1)).alias("prev_close"),
-            ((col("close")-col("close").shift(Expr::from(1))) / col("close").shift(Expr::from(1))).alias("diff"),
-            col("ticker"),
-            col("close"),
-            col("close").rolling_mean(RollingOptionsFixedWindow{
-                window_size: 7,
-                min_periods: 7,
-                weights: None,
-                center: false,
-                fn_params: None,
-            }).alias("ma7"),
-            col("close").rolling_mean(RollingOptionsFixedWindow{
-                window_size: 20,
-                min_periods: 20,
-                weights: None,
-                center: false,
-                fn_params: None,
-            }).alias("ma20"),
-            col("datetime")
-        ]).collect();
-
-        println!("{:?}",result);
-        Ok(df)
+    pub async fn has_pending_order(&self,tk: &str) -> Result<bool>{
+        use crate::schema::orders::dsl::*;
+        use crate::schema::orders;
+        let conn = &mut self.pool.get().await?;
+        let result = select(exists(
+            orders::table
+                .filter(ticker.eq(tk)
+                    .and(accepted.eq(false)))
+        ))
+            .get_result::<bool>(conn)
+            .await?;
+        Ok(result)
     }
 }
 
@@ -186,22 +165,15 @@ mod test {
             quantity: 1.0,
             strategy_id: "sample".to_string(),
         };
-        let posi = repo.add_position(po).await.unwrap();
-        println!("{:?}",posi);
     }
     #[tokio::test]
-    async fn test_accept_order() {
-        let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
-        let data = repo.accept_order(2).await.unwrap();
-        println!("{:?}",data);
+    async fn test_accept_order() -> Result<()>{
+        let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string())?;
+        let result = repo.has_pending_order("267260").await?;
+        println!("{}",result);
+        Ok(())
     }
 
-    #[tokio::test]
-    async fn test_cap() {
-        let repo = Repository::new("postgres://postgres:1q2w3e4r@192.168.0.58:55432/analyzer".to_string());
-        let data = repo.get_ohlcv().await.unwrap();
-        println!("{:?}",data);
-    }
 
 
 }

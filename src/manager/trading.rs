@@ -32,9 +32,10 @@ impl TradingManager {
     pub async fn get_all_targets(&self) -> Result<Vec<String>> {
         let result = self.repository.get_daily_caps().await?.iter()
             .filter(|x|
-                x.trading_volume.as_ref()
-                    .map_or(false,|detail| detail.gt(&100_000_000_000))
+                x.market_cap.as_ref()
+                    .map_or(false,|detail| detail.gt(&300_000_000_000))
             ).map(|c| c.ticker.clone()).collect();
+        println!("{:?}",result);
         Ok(result)
     }
 
@@ -45,10 +46,9 @@ impl TradingManager {
         self.broker.process_order(cancel.clone()).await?;
         let targets = self.get_all_targets().await?;
         let socket = self.broker.transaction(cancel.clone(),targets).await?;
+        self.handle_socket_messages(socket, tx.clone()).await;
 
         let (order_tx, order_rx) = channel::<NewOrder>(10000000);
-
-        self.handle_socket_messages(socket, tx.clone()).await;
         self.spawn_strategy_handlers(tx, order_tx.clone()).await;
         self.handle_orders(order_rx).await;
 
@@ -77,7 +77,7 @@ impl TradingManager {
                     let strategy = strategy.lock().await;
                     let id = strategy.get_id();
                     let po = {
-                        if let Ok(position) = repo.get_position(tick.ticker.clone(),id).await {
+                        if let Ok(position) = repo.get_position(tick.ticker.as_str(),id).await {
                             position
                         }else{
                             None
@@ -98,11 +98,24 @@ impl TradingManager {
     }
 
     async fn handle_orders(&self, mut order_rx: tokio::sync::mpsc::Receiver<NewOrder>) {
+
         while let Some(order) = order_rx.recv().await {
-            match self.broker.execute_order(order.clone()).await {
-                Ok(_) => info!("Order executed: {}", order.ticker),
-                Err(e) => error!("Failed to execute order: {}", e),
+            match self.repository.has_pending_order(order.ticker.as_str()).await{
+                Ok(b) => {
+                    if !b {
+                        match self.broker.execute_order(order.clone()).await {
+                            Ok(_) => info!("Order executed: {}", order.ticker),
+                            Err(e) => error!("Failed to execute order: {}", e),
+                        }
+                    }
+                },
+                _ => {
+                    info!("preorder exist")
+                }
             }
+
+
+
         }
     }
 

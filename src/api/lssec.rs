@@ -1,7 +1,12 @@
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc};
+use std::sync::Arc;
 
+use crate::api::market::{MarketAPI, OrderResult, OrderResultType};
+use crate::model::market::Market;
+use crate::model::order::{NewOrder, Order, OrderType};
+use crate::model::position::Position;
+use crate::model::tick::Tick;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures_util::stream::SplitSink;
@@ -17,12 +22,7 @@ use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info};
-use crate::api::market::{MarketAPI, OrderResult,OrderResultType};
-use crate::model::position::Position;
-use crate::model::order::{NewOrder, Order, OrderType};
-use crate::model::tick::Tick;
-use crate::model::market::Market;
+use tracing::info;
 
 pub struct LsSecClient {
     key: String,
@@ -107,7 +107,6 @@ impl LsSecClient {
         Ok(tickers)
     }
 
-
     async fn api_call(&self, path: &str, tr_cd: &str, body: &Value) -> Result<Value> {
         let token = self.get_access_token().await?;
         let mut headers = reqwest::header::HeaderMap::new();
@@ -187,7 +186,7 @@ impl MarketAPI for LsSecClient {
                             "tr_key": ""
                         }
                     })
-                        .to_string(),
+                    .to_string(),
                 ))
                 .await?;
         }
@@ -307,28 +306,37 @@ impl MarketAPI for LsSecClient {
             }
             drop(sender);
             let tickermap = self.get_tickers().await?;
-            let tickers = tickermap.get(&ticker).context("invalid ticker")?;
-            let data = serde_json::json!({
-                "header": {
-                    "token": self.get_access_token().await?,
-                    "tr_type": "3"
-                },
-                "body": {
-                    "tr_cd": || -> &'static str {
-                match tickers {
-                    Market::KOSPI => "S3_",
-                    Market::KOSDAQ => "K3_",
-                }
-            }(),
-                    "tr_key": ticker
-                }
-            });
+            let market = tickermap.get(&ticker);
 
-            let mut sender = self.ws_sender.lock().await;
-            if let Some(sender) = sender.as_mut() {
-                sender.send(Message::Text(data.to_string())).await?;
+            match market {
+                Some(m) => {
+                    let data = serde_json::json!({
+                        "header": {
+                            "token": self.get_access_token().await?,
+                            "tr_type": "3"
+                        },
+                        "body": {
+                            "tr_cd": || -> &'static str {
+                        match m {
+                            Market::KOSPI => "S3_",
+                            Market::KOSDAQ => "K3_",
+                        }
+                    }(),
+                            "tr_key": ticker
+                        }
+                    });
+
+                    let mut sender = self.ws_sender.lock().await;
+                    if let Some(sender) = sender.as_mut() {
+                        sender.send(Message::Text(data.to_string())).await?;
+                    }
+                    Ok(())
+                }
+                None => {
+                    info!("not found market {}",ticker);
+                    Ok(())
+                },
             }
-            Ok(())
         } else {
             return Err(anyhow::anyhow!("Already subscribed"));
         }
@@ -399,10 +407,7 @@ impl MarketAPI for LsSecClient {
         Ok(())
     }
 
-    async fn order(
-        &self,
-        mut order: NewOrder,
-    ) -> Result<NewOrder> {
+    async fn order(&self, mut order: NewOrder) -> Result<NewOrder> {
         let body = serde_json::json!({
             "CSPAT00601InBlock1": {
                 "IsuNo": format!("A{}", order.ticker),
@@ -424,21 +429,24 @@ impl MarketAPI for LsSecClient {
         let result = self.api_call("/stock/order", "CSPAT00601", &body).await?;
         let result_cloned = result.clone();
         let rsp_cd = result.get("rsp_cd").and_then(|block| block.as_str());
-        match rsp_cd{
+        match rsp_cd {
             Some("08677") => {
                 return Err(anyhow::anyhow!("not enough money: {}", result_cloned));
-            },
+            }
             Some("00040") => {
                 let id = result
                     .get("CSPAT00601OutBlock2")
                     .and_then(|block| block.get("OrdNo"))
                     .and_then(|ord_no| ord_no.as_i64())
-                    .context(format!("Failed to get order number: {}",result_cloned))?;
+                    .context(format!("Failed to get order number: {}", result_cloned))?;
                 order.id = id as i32;
-                return Ok(order)
-            },
+                return Ok(order);
+            }
             None | _ => {
-                return Err(anyhow::anyhow!("Failed to get response code: {}", result_cloned));
+                return Err(anyhow::anyhow!(
+                    "Failed to get response code: {}",
+                    result_cloned
+                ));
             }
         }
     }
@@ -539,8 +547,8 @@ mod test {
 
         let tk = CancellationToken::new();
         if let Ok(mut rx) = client.connect_websocket_order_transaction(tk).await {
-            while let Some(i)  = rx.recv().await {
-                println!("{:?}",i)
+            while let Some(i) = rx.recv().await {
+                println!("{:?}", i)
             }
         }
     }
